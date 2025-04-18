@@ -43,6 +43,7 @@ def main():
     landmark_tensor = torch.zeros(8)
     cfg.model.pretrained = None
     model = build_predictor(cfg.model)
+    model
     load_checkpoint(model, args.checkpoint, map_location='cpu')
     if args.use_cuda:
         model.cuda()

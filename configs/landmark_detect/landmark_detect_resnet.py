@@ -7,7 +7,7 @@ img_size = (224, 224)
 
 model = dict(
     type='LandmarkDetector',
-    backbone=dict(type='ResNet', layer_setting='resnet50'),
+    backbone=dict(type='ResNet', setting='resnet50'),
     global_pool=dict(
         type='GlobalPooling',
         inplanes=(7, 7),
@@ -37,7 +37,8 @@ model = dict(
         outchannels=2,
         landmark_num=landmark_num,
         loss_regress=dict(type='MSELoss', ratio=1, reduction='none')),
-    pretrained='checkpoint/resnet50.pth')
+    # pretrained='checkpoint/resnet50.pth'
+    )
 
 # dataset settings
 dataset_type = 'Landmark_Detect'

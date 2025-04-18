@@ -1,6 +1,7 @@
 matplotlib
-mmcv>=0.5.1
+mmcv==1.7.2
 numpy
+pillow==9.5.0
 scikit-image
 scikit-learn
 torch>=1.3
