@@ -52,7 +52,7 @@ class RoIPooling(nn.Module):
 
         ab = [np.array([[self.a, 0], [0, self.b]]) for _ in range(batch_size)]
         ab = np.stack(ab, axis=0)
-        ab = torch.from_numpy(ab).float().cuda()
+        ab = torch.from_numpy(ab).float()#.cuda()
         size = torch.Size(
             (batch_size, features.size(1), self.roi_size, self.roi_size))
 
