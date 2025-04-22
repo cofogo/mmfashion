@@ -144,7 +144,7 @@ def run_combined_inference(args):
     landmark_detector.eval()
     print(f'Loaded landmark detector from: {args.landmark_checkpoint}')
 
-    cate_predictor = CatePredictor(pred_cfg.data.test, tops_type=[3])
+    cate_predictor = CatePredictor(pred_cfg.data.test, tops_type=[5])
 
     # Test image
     img_tensor = get_img_tensor_inference(args.input, args.use_cuda, rotate=False)
