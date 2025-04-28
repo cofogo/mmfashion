@@ -20,11 +20,11 @@ def parse_args():
     parser.add_argument(
         '--config',
         help='train config file path',
-        default='configs/landmark_detect/landmark_detect_vgg.py')
+        default='configs/landmark_detect/landmark_detect_resnet.py')
     parser.add_argument(
         '--checkpoint',
         type=str,
-        default='checkpoint/LandmarkDetect/global/landmark_detect_best.pth',
+        default='checkpoints/resnetLandmarkLatest.pth',
         help='the checkpoint file to resume from')
     parser.add_argument(
         '--validate',
@@ -32,7 +32,7 @@ def parse_args():
         help='whether to evaluate the checkpoint during training',
         default=True)
     parser.add_argument(
-        '--use_cuda', type=bool, default=True, help='use gpu or not')
+        '--use_cuda', type=bool, default=False, help='use gpu or not')
     args = parser.parse_args()
     return args
 
@@ -51,7 +51,7 @@ def main():
     # build model and load checkpoint
     model = build_landmark_detector(cfg.model)
     print('model built')
-    load_checkpoint(model, args.checkpoint)
+    load_checkpoint(model, args.checkpoint, map_location='cpu')
     print('load checkpoint from: {}'.format(args.checkpoint))
 
     if args.use_cuda:

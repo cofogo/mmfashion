@@ -51,11 +51,11 @@ class LandmarkDetectDataset(Dataset):
             self.bboxes = None
 
         # load landmarks and visibility
-        self.landmarks = np.loadtxt(landmark_file, dtype=np.float)
+        self.landmarks = np.loadtxt(landmark_file, dtype=float)
 
         # load attributes
         if attr_file is not None:
-            self.attributes = np.loadtxt(attr_file, dtype=np.float)
+            self.attributes = np.loadtxt(attr_file, dtype=float)
         else:
             self.attributes = None
 

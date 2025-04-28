@@ -82,9 +82,9 @@ class LandmarkDetectorEvaluator(object):
         vis = vis.cpu().detach().numpy()
 
         pred_lm_np = np.reshape(
-            pred_lm_np.astype(np.float), (batch_size, self.landmark_num, 2))
+            pred_lm_np.astype(float), (batch_size, self.landmark_num, 2))
         landmark_np = np.reshape(
-            landmark_np.astype(np.float), (batch_size, self.landmark_num, 2))
+            landmark_np.astype(float), (batch_size, self.landmark_num, 2))
 
         # pred_vis_prob >= self.prob_threshold, view as True
         pred_vis_prob = np.reshape(pred_vis,

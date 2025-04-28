@@ -34,7 +34,7 @@ def _non_dist_test(model, dataset, cfg, validate=False):
 
     print('dataloader built')
 
-    model = MMDataParallel(model, device_ids=cfg.gpus.test).cuda()
+    model = MMDataParallel(model, device_ids=cfg.gpus.test)#.cuda()
     model.eval()
 
     evaluator = LandmarkDetectorEvaluator(cfg.img_size, cfg.landmark_num)

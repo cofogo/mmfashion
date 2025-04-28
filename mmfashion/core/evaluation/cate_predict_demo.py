@@ -31,7 +31,7 @@ class CatePredictor(object):
             data = pred
         else:
             raise TypeError('type {} cannot be calculated.'.format(type(pred)))
-        print(f"Predictions: {data}")
+
         indexes = np.argsort(data)[::-1]
         for topk in self.tops_type:
             idxes = indexes[:topk]

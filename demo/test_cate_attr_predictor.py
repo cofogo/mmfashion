@@ -17,8 +17,10 @@ from mmfashion.models import build_predictor, build_landmark_detector
 from mmfashion.utils import get_img_tensor, draw_landmarks
 
 
-image_dir = '/Users/ties/Downloads/clothing_v3/frontRotated'
-test_img = '/Users/ties/Pictures/sweater5.jpg'
+image_dir = '/Users/ties/Pictures/img/'
+test_img = '/Users/ties/Pictures/img/img_00000012.jpg'
+
+ONLY_FRONT = False
 
 
 def parse_args():
@@ -152,19 +154,21 @@ def run_combined_inference(args):
     attr_prob, cate_prob = predictor(img_tensor, attr=None, landmark=landmark_tensor, return_loss=False)
     cate_predictor.show_prediction(cate_prob)
     category = cate_predictor.cate_idx2name[cate_prob.argmax().item()]
-    show_img(img_tensor, category)
+    # show_img(img_tensor, category)
 
     # Folder batch
     for image_name in os.listdir(image_dir):
-        if not image_name.lower().endswith(('.jpg', '.jpeg', '.png')) or not image_name.startswith('front'):
+        if not image_name.lower().endswith(('.jpg', '.jpeg', '.png')):
+            continue
+        if ONLY_FRONT and not image_name.startswith('front'):
             continue
         image_path = os.path.join(image_dir, image_name)
-        img_tensor = get_img_tensor_inference(image_path, args.use_cuda)
-        landmark_tensor = detect_landmarks(image_path, landmark_detector, args.use_cuda)
+        img_tensor = get_img_tensor_inference(image_path, args.use_cuda, rotate=False)
+        landmark_tensor = detect_landmarks(image_path, landmark_detector, args.use_cuda, rotate=False)
         attr_prob, cate_prob = predictor(img_tensor, attr=None, landmark=landmark_tensor, return_loss=False)
         cate_predictor.show_prediction(cate_prob)
         category = cate_predictor.cate_idx2name[cate_prob.argmax().item()]
-        show_img(img_tensor, category)
+        # show_img(img_tensor, category)
 
 
 def main():
