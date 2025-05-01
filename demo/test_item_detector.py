@@ -1,0 +1,32 @@
+from ultralytics import YOLO
+from ultralyticsplus import render_result
+import torch
+import os
+
+input_dir = 'data/Attr_Predict/img/Woven_Suit_Joggers'
+
+# load model
+model = YOLO('checkpoints/best.pt', task='detect')
+# checkpoint = torch.load('checkpoints/best.pt', weights_only=False)
+# model.load_state_dict(checkpoint, strict=False)
+model.model.eval()
+
+# set image
+# image = 'demo/imgs/01_4_full.jpg'
+
+for image in os.listdir(input_dir):
+    if not image.lower().endswith(('.jpg', '.jpeg', '.png')):
+        continue
+    image = os.path.join(input_dir, image)
+
+    # perform inference
+    results = model.predict(image, conf=0.01, imgsz=640, show=True)
+
+    if results[0].boxes.id is None:
+        print('No object detected')
+        continue
+    
+    # observe results
+    print(results[0].boxes)
+    render = render_result(model=model, image=image, result=results[0])
+    render.show()
