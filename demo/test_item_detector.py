@@ -22,9 +22,11 @@ for image in os.listdir(input_dir):
     # perform inference
     results = model.predict(image, conf=0.01, imgsz=640, show=True)
 
-    if results[0].boxes.id is None:
-        print('No object detected')
+    # Check if any boxes were detected
+    if len(results[0].boxes) == 0:
+        print(f'No objects detected in {os.path.basename(image)}')
         continue
+
     # observe results
     print("Detected boxes object:", results[0].boxes)
     
