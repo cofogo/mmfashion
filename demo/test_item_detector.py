@@ -25,8 +25,17 @@ for image in os.listdir(input_dir):
     if results[0].boxes.id is None:
         print('No object detected')
         continue
-    
     # observe results
-    print(results[0].boxes)
+    print("Detected boxes object:", results[0].boxes)
+    
+    # Explicitly print bounding box coordinates for each detection
+    print(f"--- Bounding Boxes for {os.path.basename(image)} ---")
+    for box in results[0].boxes:
+        class_id = model.names[int(box.cls[0])]
+        coords = box.xyxy[0].tolist()
+        conf = box.conf[0].item()
+        print(f"  Class: {class_id}, Confidence: {conf:.2f}, Coords (xyxy): {coords}")
+    print("------------------------------------\n")
+
     render = render_result(model=model, image=image, result=results[0])
     render.show()
