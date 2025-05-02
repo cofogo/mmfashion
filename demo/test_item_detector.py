@@ -20,7 +20,7 @@ for image in os.listdir(input_dir):
     image = os.path.join(input_dir, image)
 
     # perform inference
-    results = model.predict(image, conf=0.01, imgsz=640, show=True)
+    results = model.predict(image, conf=0.1, imgsz=640, show=True)
 
     # Check if any boxes were detected
     if len(results[0].boxes) == 0:
