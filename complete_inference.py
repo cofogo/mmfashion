@@ -17,7 +17,7 @@ from mmfashion.core import CatePredictor # Assuming we primarily want category f
 
 
 # --- Configuration ---
-DEFAULT_INPUT_DIR = 'data/Attr_Predict/img/Woven_Suit_Joggers' # Example input
+DEFAULT_INPUT_DIR = 'data/Attr_Predict/img/V-Neck_Sweater' # Example input
 DEFAULT_OUTPUT_DIR = 'output_complete_inference'
 
 # Model Paths (Update these paths as needed)
@@ -130,8 +130,8 @@ def detect_landmarks_on_crop(pil_crop, landmark_detector, use_cuda):
 
     for i in range(num_landmarks):
         # Store the 224x224 coordinates for the predictor tensor
-        x_norm = pred_lm[i, 0] * 224.0
-        y_norm = pred_lm[i, 1] * 224.0
+        x_norm = pred_lm[i, 0]# * 224.0
+        y_norm = pred_lm[i, 1]# * 224.0
         landmark_tensor_np[i * 2] = x_norm
         landmark_tensor_np[i * 2 + 1] = y_norm
 
