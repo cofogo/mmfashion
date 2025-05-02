@@ -2,7 +2,8 @@ import argparse
 import os
 import torch
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image # Keep PIL for opening and initial cropping
+import cv2 # Import OpenCV
 import torchvision.transforms as transforms
 from mmcv import Config
 from mmcv.runner import load_checkpoint
@@ -142,15 +143,27 @@ def detect_landmarks_on_crop(pil_crop, landmark_detector, use_cuda):
     return landmark_tensor.cuda() if use_cuda else landmark_tensor, visible_landmarks_coords
 
 
-# --- Draw Landmarks ---
-def draw_landmarks_on_pil(pil_image, landmarks, radius=3, color='red'):
-    """Draws landmarks on a PIL image."""
-    draw = ImageDraw.Draw(pil_image)
+# --- Draw Landmarks using OpenCV ---
+def draw_landmarks_cv2(cv_image, landmarks, radius=3, color=(0, 0, 255)): # BGR color for red
+    """Draws landmarks on an OpenCV image (numpy array)."""
     for x, y in landmarks:
         # Ensure coordinates are within image bounds for drawing
         x_draw, y_draw = int(round(x)), int(round(y))
-        draw.ellipse((x_draw - radius, y_draw - radius, x_draw + radius, y_draw + radius), fill=color)
-    return pil_image
+        # Draw a circle for each landmark
+        cv2.circle(cv_image, (x_draw, y_draw), radius, color, -1) # -1 thickness fills the circle
+    return cv_image
+
+# --- Utility to convert PIL to OpenCV format ---
+def pil_to_cv2(pil_image):
+    """Converts a PIL image (RGB) to an OpenCV image (BGR)."""
+    return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+
+# --- Utility to display image with waitkey ---
+def display_image(window_name, image, wait_time=0):
+    """Displays an image using cv2.imshow and waits."""
+    cv2.imshow(window_name, image)
+    key = cv2.waitKey(wait_time)
+    return key # Return the pressed key
 
 # --- Main Function ---
 def main():
@@ -238,24 +251,50 @@ def main():
         print(f"\n--- Processing: {os.path.basename(img_path)} ---")
         try:
             original_pil_image = Image.open(img_path).convert("RGB")
+            # Convert original PIL image to OpenCV format for drawing
+            original_cv_image = pil_to_cv2(original_pil_image)
         except Exception as e:
             print(f"  Error opening image: {e}")
             continue
 
         # 1. Detect Items using YOLO
+        print("  Step 1: Running YOLO object detection...")
         try:
-            yolo_results = yolo_model.predict(img_path, conf=args.conf_threshold, verbose=False) # verbose=False to reduce clutter
+            yolo_results = yolo_model.predict(img_path, conf=args.conf_threshold, verbose=False)
         except Exception as e:
-            print(f"  Error during YOLO prediction: {e}")
+            print(f"    Error during YOLO prediction: {e}")
             continue
 
         if len(yolo_results) == 0 or len(yolo_results[0].boxes) == 0:
-            print("  No objects detected by YOLO.")
+            print("    No objects detected by YOLO.")
             continue
 
+        # --- Visualization: Show all YOLO detections ---
+        yolo_vis_image = original_cv_image.copy()
         boxes = yolo_results[0].boxes
+        print(f"    Found {len(boxes)} objects in total.")
+        for box in boxes:
+            try:
+                coords = list(map(int, box.xyxy[0].tolist()))
+                conf = box.conf[0].item()
+                cls_idx = int(box.cls[0])
+                label = f"{yolo_model.names[cls_idx]}: {conf:.2f}"
+                # Draw rectangle (BGR color - green for clothing, blue otherwise)
+                color = (0, 255, 0) if yolo_model.names[cls_idx] == 'clothing' else (255, 0, 0)
+                cv2.rectangle(yolo_vis_image, (coords[0], coords[1]), (coords[2], coords[3]), color, 2)
+                # Put label
+                cv2.putText(yolo_vis_image, label, (coords[0], coords[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            except Exception as e:
+                print(f"    Warning: Error processing a YOLO box for visualization: {e}")
+        print("    Displaying all YOLO detections. Press any key to continue...")
+        display_image(f"YOLO Detections: {os.path.basename(img_path)}", yolo_vis_image)
+        cv2.destroyWindow(f"YOLO Detections: {os.path.basename(img_path)}") # Close the window
+        # --- End Visualization ---
+
+
         crop_counter = 0
         processed_clothing_item = False
+        print("\n  Processing detected 'clothing' items:")
         for i, box in enumerate(boxes):
             try:
                 class_id_idx = int(box.cls[0])
@@ -271,99 +310,128 @@ def main():
                 conf = box.conf[0].item()
                 print(f"  Detected 'clothing' item {crop_counter} (Confidence: {conf:.2f}) at {coords}")
 
-                # Crop the original image
+                # Crop the original image using PIL
                 crop_coords_int = tuple(map(int, coords))
-                # Ensure coordinates are valid (x1 < x2, y1 < y2)
-                if crop_coords_int[0] >= crop_coords_int[2] or crop_coords_int[1] >= crop_coords_int[3]:
-                    print(f"    Invalid crop coordinates: {crop_coords_int}. Skipping.")
+                # Ensure coordinates are valid (x1 < x2, y1 < y2) and within image bounds
+                img_w, img_h = original_pil_image.size
+                x1, y1, x2, y2 = crop_coords_int
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(img_w, x2), min(img_h, y2)
+                if x1 >= x2 or y1 >= y2:
+                    print(f"    Invalid or zero-area crop coordinates after clamping: ({x1},{y1},{x2},{y2}). Skipping.")
                     continue
+                crop_coords_valid = (x1, y1, x2, y2)
+
                 try:
-                    cropped_pil_image = original_pil_image.crop(crop_coords_int)
+                    cropped_pil_image = original_pil_image.crop(crop_coords_valid)
                 except Exception as e:
                      print(f"    Error cropping image: {e}")
                      continue
 
                 if cropped_pil_image.size[0] == 0 or cropped_pil_image.size[1] == 0:
-                    print("    Warning: Cropped image has zero size. Skipping.")
+                    print("    Warning: Cropped image has zero size after PIL crop. Skipping.")
                     continue
+
+                # Convert crop to OpenCV format for processing and display
+                cropped_cv_image = pil_to_cv2(cropped_pil_image)
+
+                # --- Visualization: Show Cropped Image ---
+                print("    Step 2: Displaying cropped clothing item. Press any key...")
+                display_image(f"Crop {crop_counter}", cropped_cv_image)
+                cv2.destroyWindow(f"Crop {crop_counter}")
+                # --- End Visualization ---
 
                 # 3. Detect Landmarks on the Crop
+                print(f"    Step 3: Detecting landmarks for item {crop_counter}...")
                 try:
                     landmark_tensor, visible_landmarks = detect_landmarks_on_crop(
-                        cropped_pil_image, landmark_detector, args.use_cuda
+                        cropped_pil_image, landmark_detector, args.use_cuda # Use PIL image for tensor input
                     )
-                    print(f"    Detected {len(visible_landmarks)} visible landmarks for item {crop_counter}.")
+                    print(f"      Detected {len(visible_landmarks)} visible landmarks.")
+
+                    # --- Visualization: Show Landmarks on Crop ---
+                    landmarks_vis_image = cropped_cv_image.copy() # Use CV image for drawing
+                    landmarks_vis_image = draw_landmarks_cv2(landmarks_vis_image, visible_landmarks)
+                    print("      Displaying landmarks on crop. Press any key...")
+                    display_image(f"Landmarks {crop_counter}", landmarks_vis_image)
+                    cv2.destroyWindow(f"Landmarks {crop_counter}")
+                    # --- End Visualization ---
+
                 except Exception as e:
-                    print(f"    Error detecting landmarks for item {crop_counter}: {e}")
-                    # Decide whether to continue without landmarks or skip prediction
+                    print(f"      Error detecting landmarks for item {crop_counter}: {e}")
                     # For RoI predictor, landmarks are usually required.
                     print(f"    Skipping prediction for item {crop_counter} due to landmark error.")
-                    continue
+                    print(f"      Skipping prediction for item {crop_counter} due to landmark error.")
+                    continue # Skip prediction if landmarks failed
 
                 # 4. Predict Category/Attributes using Crop and Landmarks
-                pred_cate_name = "unknown_category" # Default name if prediction fails or no display helper
+                print(f"    Step 4: Predicting category/attributes for item {crop_counter}...")
+                pred_cate_name = "unknown_category" # Default name
+                final_vis_image = cropped_cv_image.copy() # Start with the crop
+                if visible_landmarks: # Draw landmarks if available
+                    final_vis_image = draw_landmarks_cv2(final_vis_image, visible_landmarks)
+
                 try:
-                    # Preprocess the crop specifically for the predictor
+                    # Preprocess the PIL crop specifically for the predictor
                     img_tensor_pred = preprocess_image_mmfashion(cropped_pil_image, args.use_cuda)
 
                     with torch.no_grad():
                         # Pass image tensor and landmark tensor to the predictor
-                        # Ensure the keys ('img', 'landmark') match what the predictor's forward method expects
-                        # Based on typical MMfashion structure, it might just take tensors directly or a dict
-                        # Assuming direct tensor input based on common patterns:
                         attr_prob, cate_prob = predictor(img_tensor_pred, attr=None, landmark=landmark_tensor, return_loss=False)
-                        # If it expects a dict:
-                        # results = predictor(dict(img=img_tensor_pred, landmark=landmark_tensor), return_loss=False)
-                        # attr_prob, cate_prob = results['attr_prob'], results['cate_prob'] # Adjust keys as needed
 
-                    # Process and display predictions
+                    # Process and display category prediction
                     if cate_prob is not None:
                         pred_cate_idx = cate_prob.argmax().item()
                         if cate_predictor_display and pred_cate_idx in cate_predictor_display.cate_idx2name:
                             pred_cate_name = cate_predictor_display.cate_idx2name[pred_cate_idx]
-                            print(f"    Predicted Category for item {crop_counter}: {pred_cate_name} (Index: {pred_cate_idx})")
+                            print(f"      Predicted Category: {pred_cate_name} (Index: {pred_cate_idx})")
                         else:
                             pred_cate_name = f"category_index_{pred_cate_idx}"
-                            print(f"    Predicted Category Index for item {crop_counter}: {pred_cate_idx} (Name lookup unavailable)")
-                        # Optional: Show top-k probabilities
-                        # if cate_predictor_display:
-                        #    cate_predictor_display.show_prediction(cate_prob)
+                            print(f"      Predicted Category Index: {pred_cate_idx} (Name lookup unavailable)")
                     else:
-                        print(f"    Category prediction not available for item {crop_counter}.")
+                        print("      Category prediction not available.")
+                        pred_cate_name = "category_NA"
 
-                    # Add attribute prediction display here if needed
-                    # if attr_prob is not None:
-                    #    # Process attr_prob (e.g., find top attributes based on threshold)
-                    #    print(f"    Attribute probabilities (first 5): {attr_prob.squeeze()[:5].tolist()}")
+                    # Add attribute prediction processing here if needed
 
+                    # --- Visualization: Show Final Result (Crop + Landmarks + Prediction) ---
+                    # Add predicted category text to the image
+                    cv2.putText(final_vis_image, pred_cate_name, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2) # Green text at top-left
+                    print("      Displaying final prediction. Press any key to validate and continue...")
+                    display_image(f"Prediction {crop_counter}: {pred_cate_name}", final_vis_image)
+                    cv2.destroyWindow(f"Prediction {crop_counter}: {pred_cate_name}") # Close the window
+                    # --- End Visualization ---
 
                 except Exception as e:
-                    print(f"    Error during category/attribute prediction for item {crop_counter}: {e}")
-                    # Continue to next item, but maybe save crop without prediction name
+                    print(f"      Error during category/attribute prediction: {e}")
+                    # Display the image before prediction failure if possible
+                    print("      Displaying image before prediction error. Press any key...")
+                    display_image(f"Error Before Prediction {crop_counter}", final_vis_image) # Show crop+landmarks if available
+                    cv2.destroyWindow(f"Error Before Prediction {crop_counter}")
+                    # Continue to next item or save without prediction name
 
-                # 5. Save Cropped Image (Optional)
+                # 5. Save Cropped Image (Optional) - Keep this functionality
                 if args.save_crops:
-                    img_to_save = cropped_pil_image.copy()
-                    if args.draw_landmarks and visible_landmarks:
-                        try:
-                            img_to_save = draw_landmarks_on_pil(img_to_save, visible_landmarks)
-                        except Exception as e:
-                            print(f"    Warning: Could not draw landmarks on saved crop: {e}")
+                    # Use the final visualized image (crop + landmarks) for saving if landmarks were drawn
+                    img_to_save_cv = final_vis_image if (args.draw_landmarks and visible_landmarks) else cropped_cv_image
 
                     # Sanitize category name for filename
-                    safe_cate_name = "".join(c if c.isalnum() else "_" for c in pred_cate_name)
+                    safe_cate_name = "".join(c if c.isalnum() or c in ['_','-'] else "_" for c in pred_cate_name)
                     base_filename = os.path.splitext(os.path.basename(img_path))[0]
+                    output_filename = f"{base_filename}_crop_{crop_counter}_{safe_cate_name}.jpg"
                     output_filename = f"{base_filename}_crop_{crop_counter}_{safe_cate_name}.jpg"
                     output_path = os.path.join(args.output_dir, output_filename)
                     try:
-                        img_to_save.save(output_path)
-                        print(f"    Saved cropped image to: {output_path}")
+                        # Save the OpenCV image
+                        cv2.imwrite(output_path, img_to_save_cv)
+                        print(f"    Saved final image to: {output_path}")
                     except Exception as e:
-                        print(f"    Error saving cropped image {output_path}: {e}")
+                        print(f"    Error saving final image {output_path}: {e}")
 
                 crop_counter += 1
+                print("-" * 20) # Separator between clothing items
             # End if class_name == 'clothing'
-        # End loop over boxes
+        # End loop over boxes for one image
 
         if not processed_clothing_item:
             print("  No 'clothing' items found in this image.")
