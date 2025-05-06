@@ -310,15 +310,25 @@ def main():
                 conf = box.conf[0].item()
                 print(f"  Detected 'clothing' item {crop_counter} (Confidence: {conf:.2f}) at {coords}")
 
-                # Crop the original image using PIL
-                crop_coords_int = tuple(map(int, coords))
-                # Ensure coordinates are valid (x1 < x2, y1 < y2) and within image bounds
+                # Crop the original image using PIL, adding a 10px boundary
                 img_w, img_h = original_pil_image.size
-                x1, y1, x2, y2 = crop_coords_int
-                x1, y1 = max(0, x1), max(0, y1)
-                x2, y2 = min(img_w, x2), min(img_h, y2)
+                raw_x1, raw_y1, raw_x2, raw_y2 = map(int, coords)
+
+                # Add 10px boundary
+                boundary = 10
+                x1_adj = raw_x1 - boundary
+                y1_adj = raw_y1 - boundary
+                x2_adj = raw_x2 + boundary
+                y2_adj = raw_y2 + boundary
+
+                # Clip to image dimensions
+                x1 = max(0, x1_adj)
+                y1 = max(0, y1_adj)
+                x2 = min(img_w, x2_adj)
+                y2 = min(img_h, y2_adj)
+
                 if x1 >= x2 or y1 >= y2:
-                    print(f"    Invalid or zero-area crop coordinates after clamping: ({x1},{y1},{x2},{y2}). Skipping.")
+                    print(f"    Invalid or zero-area crop coordinates after boundary and clamping: ({x1},{y1},{x2},{y2}). Original: ({raw_x1},{raw_y1},{raw_x2},{raw_y2}). Skipping.")
                     continue
                 crop_coords_valid = (x1, y1, x2, y2)
 
