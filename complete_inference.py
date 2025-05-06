@@ -342,6 +342,16 @@ def main():
                 # --- End Visualization ---
 
                 # 3. Detect Landmarks on the Crop
+                '''
+                For upper-body clothes, landmark annotations are listed in the order of
+                ["left collar", "right collar", "left sleeve", "right sleeve", "left hem", "right hem"]
+                
+                For lower-body clothes, landmark annotations are listed in the order of
+                ["left waistline", "right waistline", "left hem", "right hem"]
+                
+                For upper-body clothes, landmark annotations are listed in the order of
+                ["left collar", "right collar", "left sleeve", "right sleeve", "left waistline", "right waistline", "left hem", "right hem"].
+                '''
                 print(f"    Step 3: Detecting landmarks for item {crop_counter}...")
                 try:
                     landmark_tensor, visible_landmarks = detect_landmarks_on_crop(
