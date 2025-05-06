@@ -330,6 +330,10 @@ def main():
                 if x1 >= x2 or y1 >= y2:
                     print(f"    Invalid or zero-area crop coordinates after boundary and clamping: ({x1},{y1},{x2},{y2}). Original: ({raw_x1},{raw_y1},{raw_x2},{raw_y2}). Skipping.")
                     continue
+                min_crop_size = 50
+                if x2-x1 < min_crop_size or y2-y1 < min_crop_size:
+                    print(f"    Crop size too small after boundary and clamping: ({x2-x1},{y2-y1}). Minimum: {min_crop_size}. Skipping.")
+                    continue
                 crop_coords_valid = (x1, y1, x2, y2)
 
                 try:
