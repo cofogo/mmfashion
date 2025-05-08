@@ -17,8 +17,8 @@ from mmfashion.models import build_predictor, build_landmark_detector
 from mmfashion.utils import get_img_tensor, draw_landmarks
 
 
-image_dir = '/Users/ties/Pictures/img/'
-test_img = '/Users/ties/Pictures/img/img_00000012.jpg'
+image_dir = '/Users/ties/Documents/GitHub/TextileNet/data/fabric/test/flannel'
+test_img = '/Users/ties/Pictures/sweater5.jpg'
 
 ONLY_FRONT = False
 

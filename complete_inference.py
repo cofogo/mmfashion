@@ -432,6 +432,7 @@ def main():
 
                     # Process and display attribute prediction
                     if attr_prob is not None:
+                        attr_prob = attr_prob.unsqueeze(0)
                         if attr_predictor_display:
                             print(f"      --- Attribute Predictions for item {crop_counter}: ---")
                             # attr_prob from predictor is likely (1, num_attributes)

@@ -22,13 +22,13 @@ def parse_args():
         '--checkpoint',
         type=str,
         help='checkpoint file',
-        default='checkpoint/Predict/vgg/global/latest.pth')
+        default='checkpoints/resnetAttrLatest.pth')
     parser.add_argument(
         '--config',
         help='test config file path',
-        default='configs/attribute_predict/global_predictor_vgg_attr.py')
+        default='configs/attribute_predict_coarse/roi_predictor_resnet_attr.py')
     parser.add_argument(
-        '--use_cuda', type=bool, default=True, help='use gpu or not')
+        '--use_cuda', type=bool, default=False, help='use gpu or not')
     args = parser.parse_args()
     return args
 
@@ -40,7 +40,7 @@ def main():
     img_tensor = get_img_tensor(args.input, args.use_cuda)
     # global attribute predictor will not use landmarks
     # just set a default value
-    landmark_tensor = torch.zeros(8)
+    landmark_tensor = torch.zeros(16).view(1, -1)
     cfg.model.pretrained = None
     model = build_predictor(cfg.model)
     model
@@ -55,7 +55,7 @@ def main():
     attr_prob = model(
         img_tensor, attr=None, landmark=landmark_tensor, return_loss=False)
     attr_predictor = AttrPredictor(cfg.data.test)
-
+    attr_prob = attr_prob.unsqueeze(0)
     attr_predictor.show_prediction(attr_prob)
 
 
