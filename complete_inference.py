@@ -11,8 +11,7 @@ from ultralytics import YOLO
 
 # MMfashion imports
 from mmfashion.models import build_predictor, build_landmark_detector
-from mmfashion.core import CatePredictor # Assuming we primarily want category for now
-# from mmfashion.core import AttrPredictor # Can add later if needed
+from mmfashion.core import CatePredictor, AttrPredictor # Assuming we primarily want category for now
 # from mmfashion.utils import get_img_tensor # We'll create a specific transform for PIL images
 
 
@@ -223,6 +222,21 @@ def main():
     except Exception as e:
         print(f"Warning: Could not initialize CatePredictor for display names: {e}")
 
+    attr_predictor_display = None
+    try:
+        # Check if the necessary keys exist in the loaded config for AttrPredictor
+        if hasattr(pred_cfg, 'data') and hasattr(pred_cfg.data, 'test') and hasattr(pred_cfg.data.test, 'attr_cloth_file'):
+             # Check if the file exists before initializing
+             if os.path.exists(pred_cfg.data.test.attr_cloth_file):
+                 attr_predictor_display = AttrPredictor(pred_cfg.data.test)
+                 print(f"Initialized AttrPredictor using: {pred_cfg.data.test.attr_cloth_file}")
+             else:
+                 print(f"Warning: Attribute list file not found at {pred_cfg.data.test.attr_cloth_file}. Attribute names will not be displayed.")
+        else:
+            print("Warning: Config structure for AttrPredictor not found (pred_cfg.data.test.attr_cloth_file). Attribute names will not be displayed.")
+    except Exception as e:
+        print(f"Warning: Could not initialize AttrPredictor for display names: {e}")
+
 
     # --- Prepare Output Directory ---
     os.makedirs(args.output_dir, exist_ok=True)
@@ -416,7 +430,17 @@ def main():
                         print("      Category prediction not available.")
                         pred_cate_name = "category_NA"
 
-                    # Add attribute prediction processing here if needed
+                    # Process and display attribute prediction
+                    if attr_prob is not None:
+                        if attr_predictor_display:
+                            print(f"      --- Attribute Predictions for item {crop_counter}: ---")
+                            # attr_prob from predictor is likely (1, num_attributes)
+                            # AttrPredictor.show_prediction expects (batch_size, num_attributes)
+                            attr_predictor_display.show_prediction(attr_prob)
+                        else:
+                            print("      Attribute probabilities predicted, but AttrPredictor (for names) is not available.")
+                    else:
+                        print("      Attribute prediction not available.")
 
                     # --- Visualization: Show Final Result (Crop + Landmarks + Prediction) ---
                     # Add predicted category text to the image
