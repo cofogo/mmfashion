@@ -1,12 +1,28 @@
 import onnxruntime as ort
 import numpy as np
 import os
+import torch
 from flask import Flask, request, jsonify
 from PIL import Image
 import io
 
+# Attempt to import Ultralytics components
+try:
+    from ultralytics.utils import ops
+    ULTRALYTICS_AVAILABLE = True
+    print("Ultralytics components loaded successfully.")
+except ImportError:
+    ULTRALYTICS_AVAILABLE = False
+    print("Warning: Ultralytics library not found or not fully installed. NMS post-processing will be unavailable.")
+    # Define a dummy function if ultralytics is not available
+    class ops:
+        @staticmethod
+        def non_max_suppression(*args, **kwargs):
+            raise ImportError("Ultralytics ops.non_max_suppression function is not available.")
+
+
 # --- Global Model Loading ---
-MODEL_PATH = 'yoloItem.onnx'
+MODEL_PATH = 'checkpoints/yoloItem.onnx' # Corrected path assuming it's in checkpoints
 session = None
 input_name = None
 model_input_height = 224 # Default
@@ -74,15 +90,36 @@ def predict():
         # Run inference
         outputs = session.run(None, {input_name: input_data})
 
-        # Convert output numpy arrays to lists for JSON serialization
-        output_lists = [output.tolist() for output in outputs]
+        # Assuming the primary output for detection models is the first one
+        raw_output_tensor = torch.from_numpy(outputs[0])
 
-        # Return the raw model output
-        # Modify this part if specific post-processing is needed
-        return jsonify({"model_output": output_lists})
+        # Apply Non-Maximum Suppression (NMS)
+        if not ULTRALYTICS_AVAILABLE:
+             return jsonify({"error": "Ultralytics library not available for NMS post-processing"}), 500
 
+        # Use default thresholds or make them configurable
+        conf_threshold = 0.25
+        iou_threshold = 0.45
+        detections = ops.non_max_suppression(
+            raw_output_tensor,
+            conf_thres=conf_threshold,
+            iou_thres=iou_threshold,
+            classes=None, # Filter by specific classes if needed
+            agnostic=False, # Set True for class-agnostic NMS
+            max_det=300 # Maximum number of detections
+        )[0] # Get detections for the first (and only) image in the batch
+
+        # Convert NMS results tensor to list for JSON serialization
+        nms_results_list = detections.cpu().numpy().tolist()
+
+        # Return the NMS results
+        return jsonify({"detections": nms_results_list})
+
+    except ImportError as e:
+        app.logger.error(f"Import error during processing: {str(e)}")
+        return jsonify({"error": "Server configuration error: Missing required library"}), 500
     except Exception as e:
-        app.logger.error(f"Error processing image: {str(e)}")
+        app.logger.error(f"Error processing image or applying NMS: {str(e)}")
         return jsonify({"error": "Failed to process image"}), 500
 
 if __name__ == "__main__":
