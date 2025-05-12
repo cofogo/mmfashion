@@ -1,21 +1,25 @@
 import onnxruntime as ort
 import numpy as np
 import os
+from flask import Flask, request, jsonify
+from PIL import Image
+import io
 
-# Define the path to the ONNX model
-# Assumes the script is run from the root directory containing 'checkpoints'
-onnx_model_path = 'checkpoints/yoloItem.onnx'
+# --- Global Model Loading ---
+MODEL_PATH = 'checkpoints/yoloItem.onnx'
+session = None
+input_name = None
+model_input_height = 640 # Default
+model_input_width = 640 # Default
 
-# Check if the model file exists
-if not os.path.exists(onnx_model_path):
-    print(f"Error: ONNX model not found at {onnx_model_path}")
+if not os.path.exists(MODEL_PATH):
+    print(f"FATAL ERROR: ONNX model not found at {MODEL_PATH}")
     exit(1)
 
 try:
-    # 1. Load the ONNX model
-    print(f"Loading ONNX model from {onnx_model_path}...")
-    # Consider adding more providers like 'CUDAExecutionProvider' if GPU is available and needed
-    session = ort.InferenceSession(onnx_model_path, providers=['CPUExecutionProvider'])
+    print(f"Loading ONNX model from {MODEL_PATH}...")
+    # Consider adding more providers like 'CUDAExecutionProvider' if available
+    session = ort.InferenceSession(MODEL_PATH, providers=['CPUExecutionProvider'])
     print("ONNX model loaded successfully.")
 
     # Get model input details
@@ -25,43 +29,66 @@ try:
     print(f"Model Input Name: {input_name}")
     print(f"Model Input Shape reported by ONNX: {input_shape}")
 
-    # Determine input dimensions (handle dynamic axes like 'batch', 'height', 'width')
-    # Use defaults (e.g., 640x640) if dimensions are not fixed integers in the model definition
-    batch_size = 1 if not isinstance(input_shape[0], int) or input_shape[0] <= 0 else input_shape[0]
-    channels = 3 if not isinstance(input_shape[1], int) or input_shape[1] <= 0 else input_shape[1]
-    height = 640 if not isinstance(input_shape[2], int) or input_shape[2] <= 0 else input_shape[2] # Default/common value
-    width = 640 if not isinstance(input_shape[3], int) or input_shape[3] <= 0 else input_shape[3] # Default/common value
+    # Determine input dimensions, overriding defaults if possible
+    if isinstance(input_shape[2], int) and input_shape[2] > 0:
+        model_input_height = input_shape[2]
+    if isinstance(input_shape[3], int) and input_shape[3] > 0:
+        model_input_width = input_shape[3]
+    print(f"Using Model Input Size (H, W): ({model_input_height}, {model_input_width})")
 
-    final_input_shape = (batch_size, channels, height, width)
-    print(f"Using Input Shape for Inference: {final_input_shape}")
-
-    # Create dummy input data
-    # NOTE: Real inference requires actual image data, preprocessed appropriately
-    # (e.g., resized, normalized 0-1, converted HWC to CHW, BGR to RGB if needed)
-    # Input type should match model expectation (often float32)
-    dummy_input_data = np.random.rand(*final_input_shape).astype(np.float32)
-    print(f"Created dummy input data with shape: {dummy_input_data.shape} and dtype: {dummy_input_data.dtype}")
-
-    # 2. Run inference
-    print("Running inference with dummy data...")
-    # The first argument 'None' means fetch all outputs
-    outputs = session.run(None, {input_name: dummy_input_data})
-    print("Inference completed.")
-
-    # Print basic information about the outputs
-    print(f"Number of outputs generated: {len(outputs)}")
-    for i, output in enumerate(outputs):
-        print(f"Output {i} shape: {output.shape}")
-        print(f"Output {i} dtype: {output.dtype}")
-        # Example: Accessing the first few elements of the first output
-        # print(f"Output {i} data (first 5 elements): {output.flatten()[:5]}")
-
-except ort.OrtLoadError as e:
-    print(f"Error loading the ONNX model: {e}")
-    print("Ensure the model file is valid and all necessary operators are supported by the ONNX Runtime build.")
-    exit(1)
 except Exception as e:
-    print(f"An error occurred during inference: {e}")
-    exit(1)
+    print(f"FATAL ERROR: Could not load ONNX model or get details: {e}")
+    # Optionally exit or handle appropriately if the server can't start
+    session = None # Ensure session is None if loading failed
 
-print("Script finished.")
+# --- Flask App ---
+app = Flask(__name__)
+
+@app.route("/predict", methods=["POST"])
+def predict():
+    if session is None:
+        return jsonify({"error": "Model not loaded"}), 500
+
+    if "image" not in request.files:
+        return jsonify({"error": "No image file uploaded"}), 400
+
+    image_file = request.files["image"]
+
+    try:
+        # Load image using PIL
+        image_bytes = image_file.read()
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+        # Preprocess image
+        # 1. Resize
+        image_resized = image.resize((model_input_width, model_input_height))
+        # 2. Convert to numpy array HWC
+        img_np = np.array(image_resized)
+        # 3. Normalize to 0-1
+        img_normalized = img_np.astype(np.float32) / 255.0
+        # 4. Transpose HWC to CHW (assuming model expects CHW)
+        img_chw = np.transpose(img_normalized, (2, 0, 1))
+        # 5. Add batch dimension (BCHW)
+        input_data = np.expand_dims(img_chw, axis=0)
+
+        # Run inference
+        outputs = session.run(None, {input_name: input_data})
+
+        # Convert output numpy arrays to lists for JSON serialization
+        output_lists = [output.tolist() for output in outputs]
+
+        # Return the raw model output
+        # Modify this part if specific post-processing is needed
+        return jsonify({"model_output": output_lists})
+
+    except Exception as e:
+        app.logger.error(f"Error processing image: {str(e)}")
+        return jsonify({"error": "Failed to process image"}), 500
+
+if __name__ == "__main__":
+    if session is None:
+        print("ERROR: Cannot start server because the model failed to load.")
+    else:
+        print("Starting Flask server...")
+        # Use host='0.0.0.0' to make it accessible externally, e.g., within Docker
+        app.run(host="0.0.0.0", port=5000)
