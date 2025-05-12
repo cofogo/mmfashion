@@ -6,11 +6,11 @@ from PIL import Image
 import io
 
 # --- Global Model Loading ---
-MODEL_PATH = 'checkpoints/yoloItem.onnx'
+MODEL_PATH = 'yoloItem.onnx'
 session = None
 input_name = None
-model_input_height = 640 # Default
-model_input_width = 640 # Default
+model_input_height = 224 # Default
+model_input_width = 224 # Default
 
 if not os.path.exists(MODEL_PATH):
     print(f"FATAL ERROR: ONNX model not found at {MODEL_PATH}")
