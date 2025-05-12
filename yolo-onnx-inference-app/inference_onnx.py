@@ -5,6 +5,7 @@ import torch
 from flask import Flask, request, jsonify
 from PIL import Image
 import io
+import ultralytics.utils
 
 # Attempt to import Ultralytics components
 try:
@@ -22,7 +23,7 @@ except ImportError:
 
 
 # --- Global Model Loading ---
-MODEL_PATH = 'checkpoints/yoloItem.onnx' # Corrected path assuming it's in checkpoints
+MODEL_PATH = 'yoloItem.onnx' # Corrected path assuming it's in checkpoints
 session = None
 input_name = None
 model_input_height = 224 # Default
@@ -74,6 +75,7 @@ def predict():
         # Load image using PIL
         image_bytes = image_file.read()
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        image_shape = image.size
 
         # Preprocess image
         # 1. Resize
@@ -112,8 +114,21 @@ def predict():
         # Convert NMS results tensor to list for JSON serialization
         nms_results_list = detections.cpu().numpy().tolist()
 
+        scaled_results = []
+
+        for detection in nms_results_list:
+            x1, y1, x2, y2 = detection[:4]
+            # Scale coordinates
+            x1 = int(x1 / model_input_width * image_shape[0])
+            y1 = int(y1 / model_input_height * image_shape[1])
+            x2 = int(x2 / model_input_width * image_shape[0])
+            y2 = int(y2 / model_input_height * image_shape[1])
+
+            # Append scaled detection with optional confidence/class
+            scaled_results.append([x1, y1, x2, y2] + detection[4:])
+
         # Return the NMS results
-        return jsonify({"detections": nms_results_list})
+        return jsonify({"detections": scaled_results}), 200
 
     except ImportError as e:
         app.logger.error(f"Import error during processing: {str(e)}")

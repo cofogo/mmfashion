@@ -37,6 +37,9 @@ extracted_features/
 *.npy
 *.tar
 *.tar.gz
+*.pt
+*.pth
+*.onnx
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
