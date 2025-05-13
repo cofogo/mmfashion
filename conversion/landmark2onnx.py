@@ -1,9 +1,6 @@
 from __future__ import division
 
 import torch
-import onnx
-import os
-import numpy as np
 
 from mmcv import Config
 from mmcv.runner import load_checkpoint
@@ -47,8 +44,8 @@ img_tensor = torch.randn(1, 3, 224, 224, requires_grad=False)
 with torch.no_grad():
     pred_vis, pred_lm = wrapped_model(img_tensor)
 
-print('🔍 pred_vis shape:', pred_vis.shape)
-print('🔍 pred_lm shape:', pred_lm.shape)
+print('pred_vis shape:', pred_vis.shape)
+print('pred_lm shape:', pred_lm.shape)
 
 # === EXPORT TO ONNX ===
 input_names = ['input']
