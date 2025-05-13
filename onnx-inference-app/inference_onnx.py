@@ -25,29 +25,58 @@ CLOTHING_CLASS_ID = 2 # Class ID for clothing in YOLO model
 
 
 # --- Model Loader ---
-def load_model(path, default_size):
+def load_model(path, default_img_size):
     if not os.path.exists(path):
         raise FileNotFoundError(f"ONNX model not found at {path}")
 
     print(f"Loading ONNX model from {path}...")
     session = ort.InferenceSession(path, providers=['CPUExecutionProvider'])
-    input_cfg = session.get_inputs()[0]
-    input_shape = input_cfg.shape
-    input_name = input_cfg.name
+    model_inputs_meta = session.get_inputs()
+    
+    input_details_list = []
 
-    height, width = default_size
-    # Try to get fixed height/width from model definition
-    if len(input_shape) == 4: # Check if shape has 4 dimensions (B, C, H, W)
-        if isinstance(input_shape[2], int) and input_shape[2] > 0:
-            height = input_shape[2]
-        if isinstance(input_shape[3], int) and input_shape[3] > 0:
-            width = input_shape[3]
-    else:
-        print(f"Warning: Model input shape {input_shape} is not standard BCHW. Using default size {default_size}.")
+    if path == CLASSIFICATION_MODEL_PATH:
+        if len(model_inputs_meta) < 2:
+            raise ValueError(f"Classification model at {path} is expected to have at least 2 inputs (image, landmarks), but found {len(model_inputs_meta)}.")
+        
+        # Input 0: Image (assumed)
+        img_input_meta = model_inputs_meta[0]
+        img_h, img_w = default_img_size
+        if len(img_input_meta.shape) == 4: # BCHW
+            if isinstance(img_input_meta.shape[2], int) and img_input_meta.shape[2] > 0: img_h = img_input_meta.shape[2]
+            if isinstance(img_input_meta.shape[3], int) and img_input_meta.shape[3] > 0: img_w = img_input_meta.shape[3]
+        else:
+            print(f"Warning: Classification model image input '{img_input_meta.name}' shape {img_input_meta.shape} is not BCHW. Using default size {default_img_size}.")
+        input_details_list.append({'name': img_input_meta.name, 'type': 'image', 'size': (img_h, img_w)})
+        
+        # Input 1: Landmarks (assumed)
+        lm_input_meta = model_inputs_meta[1]
+        # Ensure landmark shape is fully defined, e.g. (1, 16)
+        lm_shape = []
+        for dim_val in lm_input_meta.shape:
+            if isinstance(dim_val, int) and dim_val > 0:
+                lm_shape.append(dim_val)
+            else: # Dynamic dimension or zero/negative, which is problematic for fixed landmark tensor
+                raise ValueError(f"Landmark input '{lm_input_meta.name}' for classification model {path} has non-fixed dimensions: {lm_input_meta.shape}. Expected fixed shape (e.g., [1, 16]).")
+        lm_shape_tuple = tuple(lm_shape)
+        input_details_list.append({'name': lm_input_meta.name, 'type': 'landmarks', 'shape': lm_shape_tuple})
+        
+        print(f"Classification Model loaded. Image Input: '{input_details_list[0]['name']}' Size: {input_details_list[0]['size']}, Landmark Input: '{input_details_list[1]['name']}' Shape: {input_details_list[1]['shape']}")
 
+    else: # For YOLO and Landmark models (single image input)
+        if not model_inputs_meta:
+            raise ValueError(f"Model at {path} has no inputs defined.")
+        img_input_meta = model_inputs_meta[0]
+        img_h, img_w = default_img_size
+        if len(img_input_meta.shape) == 4: #BCHW
+            if isinstance(img_input_meta.shape[2], int) and img_input_meta.shape[2] > 0: img_h = img_input_meta.shape[2]
+            if isinstance(img_input_meta.shape[3], int) and img_input_meta.shape[3] > 0: img_w = img_input_meta.shape[3]
+        else:
+             print(f"Warning: Model input '{img_input_meta.name}' shape {img_input_meta.shape} is not BCHW. Using default size {default_img_size}.")
+        input_details_list.append({'name': img_input_meta.name, 'type': 'image', 'size': (img_h, img_w)})
+        print(f"Model loaded. Input: '{input_details_list[0]['name']}', Using Size: {input_details_list[0]['size']}")
 
-    print(f"Model loaded. Input: {input_name}, Shape: {input_shape}, Using Size: {height}x{width}")
-    return session, input_name, (height, width)
+    return session, input_details_list
 
 
 # --- Preprocessing ---
@@ -84,6 +113,31 @@ def preprocess_image_classification(pil_image, size):
     ])
     img_tensor = transform(pil_image).unsqueeze(0) # Add batch dimension
     return img_tensor.cpu().numpy() # ONNX runtime expects numpy
+
+# Prepare landmark data for ONNX model input
+def prepare_landmarks_for_onnx(landmarks_norm_array, target_shape):
+    """
+    Prepares normalized landmark coordinates for an ONNX model.
+    Args:
+        landmarks_norm_array (np.ndarray): Array of shape (num_landmarks, 2),
+                                           with coordinates normalized (e.g., to 0-224 range).
+        target_shape (tuple): The exact shape required by the ONNX model's landmark input,
+                              e.g., (1, num_landmarks * 2).
+    Returns:
+        np.ndarray: Landmark data reshaped and typed for ONNX.
+    """
+    flat_landmarks = landmarks_norm_array.flatten().astype(np.float32)
+    
+    expected_elements = 1
+    for dim in target_shape:
+        expected_elements *= dim
+    
+    if flat_landmarks.shape[0] != expected_elements:
+        raise ValueError(
+            f"Mismatch in landmark data size. Expected {expected_elements} elements for shape {target_shape}, "
+            f"but got {flat_landmarks.shape[0]} from landmarks array of shape {landmarks_norm_array.shape}."
+        )
+    return flat_landmarks.reshape(target_shape)
 
 
 # --- Postprocessing ---
@@ -129,23 +183,23 @@ def scale_landmarks(landmarks_norm, landmark_model_size, crop_size, crop_origin_
 
 
 # --- Initialize Models ---
+yolo_session, landmark_session, classification_session = None, None, None
+yolo_input_details, landmark_input_details, classification_input_details = None, None, None
+
 try:
-    yolo_session, yolo_input_name, yolo_input_size = load_model(YOLO_MODEL_PATH, DEFAULT_YOLO_INPUT_SIZE)
+    yolo_session, yolo_input_details = load_model(YOLO_MODEL_PATH, DEFAULT_YOLO_INPUT_SIZE)
 except Exception as e:
     print(f"ERROR loading YOLO model: {e}")
-    yolo_session = None
 
 try:
-    landmark_session, landmark_input_name, landmark_input_size = load_model(LANDMARK_MODEL_PATH, DEFAULT_LANDMARK_INPUT_SIZE)
+    landmark_session, landmark_input_details = load_model(LANDMARK_MODEL_PATH, DEFAULT_LANDMARK_INPUT_SIZE)
 except Exception as e:
     print(f"ERROR loading Landmark model: {e}")
-    landmark_session = None
 
 try:
-    classification_session, classification_input_name, classification_input_size = load_model(CLASSIFICATION_MODEL_PATH, DEFAULT_CLASSIFICATION_INPUT_SIZE)
+    classification_session, classification_input_details = load_model(CLASSIFICATION_MODEL_PATH, DEFAULT_CLASSIFICATION_INPUT_SIZE)
 except Exception as e:
     print(f"ERROR loading Classification model: {e}")
-    classification_session = None
 
 
 # --- Flask App ---
@@ -153,8 +207,9 @@ app = Flask(__name__)
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    if yolo_session is None or landmark_session is None or classification_session is None:
-        return jsonify({"error": "One or more models not loaded"}), 500
+    if not all([yolo_session, landmark_session, classification_session,
+                yolo_input_details, landmark_input_details, classification_input_details]):
+        return jsonify({"error": "One or more models or their configurations not loaded"}), 500
 
     if "image" not in request.files:
         return jsonify({"error": "No image file uploaded"}), 400
@@ -166,7 +221,9 @@ def predict():
         img_w, img_h = original_size
 
         # 1. Run YOLO Detection
-        yolo_input_tensor = preprocess_image_yolo(original_image, yolo_input_size)
+        yolo_input_name = yolo_input_details[0]['name']
+        yolo_model_input_size = yolo_input_details[0]['size'] # (h, w) for model
+        yolo_input_tensor = preprocess_image_yolo(original_image, yolo_model_input_size)
         yolo_outputs = yolo_session.run(None, {yolo_input_name: yolo_input_tensor})
         yolo_raw_output = torch.from_numpy(yolo_outputs[0])
 
@@ -189,8 +246,8 @@ def predict():
         # Scale YOLO boxes to original image coordinates
         detection = scale_yolo_detections(
             yolo_detections_nms.cpu().numpy(),
-            yolo_input_size, # (h, w)
-            original_size # (w, h)
+            yolo_model_input_size, # (h, w) of yolo model input
+            original_size # (w, h) of original image
         )
 
         # 2. Process each detection: Crop and run Landmark Model
@@ -223,27 +280,62 @@ def predict():
             return jsonify({"error": "Zero-size crop"}), 400
 
         # Preprocess crop for landmark model
-        landmark_input_tensor = preprocess_image_landmark(cropped_image, landmark_input_size)
+        landmark_input_name = landmark_input_details[0]['name']
+        landmark_model_input_size = landmark_input_details[0]['size'] # (h,w) for landmark model
+        landmark_input_tensor = preprocess_image_landmark(cropped_image, landmark_model_input_size)
 
         # Run landmark inference
+        # landmarks_output_from_model will be a list [vis_output, lm_output] or just [lm_output]
+        # Assuming landmark_session.run returns a list of outputs, and landmarks are in the second element if two, or first if one.
+        # The current landmark model seems to return (vis, landmarks)
         try:
-            landmarks_vis, landmarks_output = landmark_session.run(None, {landmark_input_name: landmark_input_tensor})
+            landmark_model_outputs = landmark_session.run(None, {landmark_input_name: landmark_input_tensor})
+            # Assuming the actual landmark coordinates array is the second output if multiple exist (e.g. vis, landmarks)
+            # Or the first if only one output. For 'landmark.onnx', it's [vis_scores, landmark_coords]
+            if len(landmark_model_outputs) == 2: # Assuming (vis, landmarks)
+                 landmarks_norm_raw = landmark_model_outputs[1] # Numpy array, e.g. shape (8,2)
+            elif len(landmark_model_outputs) == 1: # Assuming only landmarks
+                 landmarks_norm_raw = landmark_model_outputs[0]
+            else:
+                raise ValueError(f"Unexpected number of outputs from landmark model: {len(landmark_model_outputs)}")
+
         except Exception as e:
             app.logger.error(f"Error running landmark inference for box {detection[:4]}: {e}")
-            landmarks_output = [] # Assign empty list on error
+            landmarks_norm_raw = np.array([]) # Assign empty array on error to handle downstream
 
-        # Scale landmarks back to original image coordinates
-        scaled_landmarks = scale_landmarks(
-            landmarks_output,         # List of [x, y] normalized to landmark model input
-            landmark_input_size,      # (height, width) of landmark model input
-            crop_size,                # (width, height) of the cropped image
-            (bx1, by1)                # Top-left corner of the buffered crop in original image
-        )
+        # Scale landmarks back to original image coordinates (for JSON response)
+        # Only proceed if landmarks_norm_raw is not empty and correctly shaped
+        scaled_landmarks = []
+        if landmarks_norm_raw.ndim == 2 and landmarks_norm_raw.shape[1] == 2:
+            scaled_landmarks = scale_landmarks(
+                landmarks_norm_raw,       # Numpy array of [x, y] normalized to landmark model input
+                landmark_model_input_size,# (height, width) of landmark model input
+                crop_size,                # (width, height) of the cropped image
+                (bx1, by1)                # Top-left corner of the buffered crop in original image
+            )
+        else:
+            app.logger.warning(f"Landmark output not in expected format (num_lm, 2). Got shape {landmarks_norm_raw.shape}. Scaled landmarks will be empty.")
 
-        # 4. Run Classification Model on the crop
-        classification_input_tensor = preprocess_image_classification(cropped_image, classification_input_size)
+
+        # 4. Run Classification Model on the crop and its landmarks
+        classification_img_input_name = classification_input_details[0]['name']
+        classification_img_input_size = classification_input_details[0]['size']
+        classification_lm_input_name = classification_input_details[1]['name']
+        classification_lm_input_shape = classification_input_details[1]['shape']
+
+        classification_img_tensor = preprocess_image_classification(cropped_image, classification_img_input_size)
+        
         try:
-            classification_outputs = classification_session.run(None, {classification_input_name: classification_input_tensor})
+            if landmarks_norm_raw.ndim != 2 or landmarks_norm_raw.shape[0] == 0 : # Check if landmarks were detected
+                 raise ValueError("No valid landmarks detected or landmark output is empty/malformed, cannot run classification.")
+            
+            classification_lm_tensor = prepare_landmarks_for_onnx(landmarks_norm_raw, classification_lm_input_shape)
+
+            classification_feed_dict = {
+                classification_img_input_name: classification_img_tensor,
+                classification_lm_input_name: classification_lm_tensor
+            }
+            classification_outputs = classification_session.run(None, classification_feed_dict)
             # Assuming the output is a list of probabilities for each class
             # Output shape might be (1, num_classes)
             class_probs = classification_outputs[0][0] # Get the probabilities for the first (and only) batch item
@@ -272,12 +364,9 @@ def predict():
 
 
 if __name__ == "__main__":
-    if yolo_session and landmark_session and classification_session:
+    if all([yolo_session, landmark_session, classification_session,
+            yolo_input_details, landmark_input_details, classification_input_details]):
         print("Starting Flask server with YOLO, Landmark, and Classification models...")
         app.run(host="0.0.0.0", port=5000)
     else:
-        print("FATAL: Cannot start server because one or more models failed to load.")
-        # width = input_shape[3]
-
-    # print(f"Model loaded. Input: {input_name}, Shape: {input_shape}, Size: {height}x{width}")
-    # return session, input_name, (height, width)
+        print("FATAL: Cannot start server because one or more models or their configurations failed to load.")
