@@ -206,10 +206,7 @@ def predict():
 
             # Run landmark inference
             try:
-                landmark_outputs = landmark_session.run(None, {landmark_input_name: landmark_input_tensor})
-                # Assuming the first output contains landmark coordinates [batch, num_landmarks, 2]
-                # And they are normalized to the landmark model input size (e.g., 0-224)
-                landmarks_output = landmark_outputs[0][0] # Get landmarks for the first (only) image in batch
+                landmarks_vis, landmarks_output = landmark_session.run(None, {landmark_input_name: landmark_input_tensor})
             except Exception as e:
                 app.logger.error(f"Error running landmark inference for box {detection[:4]}: {e}")
                 landmarks_output = [] # Assign empty list on error
@@ -301,20 +298,24 @@ def scale_landmarks(landmarks_norm, landmark_model_size, crop_size, crop_origin_
     # crop_size: (width, height) of the actual cropped image fed to landmark model
     # crop_origin_buffered: (x1, y1) of the crop in the original image (with buffer)
 
+    print("Ties reached: in lm scale")
     lm_h, lm_w = landmark_model_size
     crop_w, crop_h = crop_size
     bx1, by1 = crop_origin_buffered
+    print("Ties reached: init lm vars")
 
     scaled_landmarks = []
     for lx_norm, ly_norm in landmarks_norm:
         # Scale from landmark model input space (e.g., 224x224) to crop space
         lx_crop = lx_norm * crop_w / lm_w
         ly_crop = ly_norm * crop_h / lm_h
+        print("Ties reached: actual scale")
 
         # Translate to original image space by adding crop origin
         Lx_orig = int(round(lx_crop + bx1))
         Ly_orig = int(round(ly_crop + by1))
         scaled_landmarks.append([Lx_orig, Ly_orig])
+        print("Ties reached: round n append")
 
     return scaled_landmarks
 
