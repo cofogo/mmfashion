@@ -13,8 +13,10 @@ import torchvision.transforms as transforms # For landmark preprocessing normali
 # --- Configuration ---
 YOLO_MODEL_PATH = 'yoloItem.onnx'
 LANDMARK_MODEL_PATH = 'landmark.onnx' # Added landmark model path
+CLASSIFICATION_MODEL_PATH = 'classification.onnx' # Added classification model path
 DEFAULT_YOLO_INPUT_SIZE = (224, 224)
 DEFAULT_LANDMARK_INPUT_SIZE = (224, 224) # Default for landmark model
+DEFAULT_CLASSIFICATION_INPUT_SIZE = (224, 224) # Default for classification model
 CROP_BUFFER = 10 # Pixels to add around the bounding box for cropping
 CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.45
@@ -59,6 +61,19 @@ def preprocess_image_yolo(image, size):
 
 # Preprocessing for Landmark model (assumes ImageNet normalization)
 def preprocess_image_landmark(pil_image, size):
+    # size is (height, width)
+    img_norm = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    normalize = transforms.Normalize(mean=img_norm['mean'], std=img_norm['std'])
+    transform = transforms.Compose([
+        transforms.Resize(size), # Resize takes (h, w)
+        transforms.ToTensor(), # Converts to [0, 1] and CHW
+        normalize,
+    ])
+    img_tensor = transform(pil_image).unsqueeze(0) # Add batch dimension
+    return img_tensor.cpu().numpy() # ONNX runtime expects numpy
+
+# Preprocessing for Classification model (assumes ImageNet normalization)
+def preprocess_image_classification(pil_image, size):
     # size is (height, width)
     img_norm = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     normalize = transforms.Normalize(mean=img_norm['mean'], std=img_norm['std'])
@@ -126,13 +141,19 @@ except Exception as e:
     print(f"ERROR loading Landmark model: {e}")
     landmark_session = None
 
+try:
+    classification_session, classification_input_name, classification_input_size = load_model(CLASSIFICATION_MODEL_PATH, DEFAULT_CLASSIFICATION_INPUT_SIZE)
+except Exception as e:
+    print(f"ERROR loading Classification model: {e}")
+    classification_session = None
+
 
 # --- Flask App ---
 app = Flask(__name__)
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    if yolo_session is None or landmark_session is None:
+    if yolo_session is None or landmark_session is None or classification_session is None:
         return jsonify({"error": "One or more models not loaded"}), 500
 
     if "image" not in request.files:
@@ -219,10 +240,29 @@ def predict():
             (bx1, by1)                # Top-left corner of the buffered crop in original image
         )
 
+        # 4. Run Classification Model on the crop
+        classification_input_tensor = preprocess_image_classification(cropped_image, classification_input_size)
+        try:
+            classification_outputs = classification_session.run(None, {classification_input_name: classification_input_tensor})
+            # Assuming the output is a list of probabilities for each class
+            # Output shape might be (1, num_classes)
+            class_probs = classification_outputs[0][0] # Get the probabilities for the first (and only) batch item
+            predicted_class_index = int(np.argmax(class_probs))
+            predicted_class_confidence = float(class_probs[predicted_class_index])
+            classification_result = {
+                "predicted_class_index": predicted_class_index,
+                "confidence": round(predicted_class_confidence, 3)
+            }
+        except Exception as e:
+            app.logger.error(f"Error running classification inference for box {detection[:4]}: {e}")
+            classification_result = {"error": "Classification failed"}
+
+
         return jsonify({
             "bbox": [x1, y1, x2, y2], # Original YOLO box (unbuffered)
             "confidence": round(confidence, 3),
-            "landmarks": scaled_landmarks # Scaled to original image coords
+            "landmarks": scaled_landmarks, # Scaled to original image coords
+            "classification": classification_result
         }), 200
 
 
@@ -232,8 +272,8 @@ def predict():
 
 
 if __name__ == "__main__":
-    if yolo_session and landmark_session:
-        print("Starting Flask server with YOLO and Landmark models...")
+    if yolo_session and landmark_session and classification_session:
+        print("Starting Flask server with YOLO, Landmark, and Classification models...")
         app.run(host="0.0.0.0", port=5000)
     else:
         print("FATAL: Cannot start server because one or more models failed to load.")
