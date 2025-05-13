@@ -6,6 +6,7 @@ import onnxruntime as ort
 from flask import Flask, request, jsonify
 from PIL import Image
 from ultralytics.utils import ops
+from mmfashion.core import CatePredictor
 
 
 import torchvision.transforms as transforms # For landmark preprocessing normalization
@@ -22,6 +23,59 @@ CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.45
 MAX_DETECTIONS = 1 # Only process the first most confident detection
 CLOTHING_CLASS_ID = 2 # Class ID for clothing in YOLO model
+
+CATEGORY_LIST = [
+'Anorak',
+'Blazer',
+'Blouse',
+'Bomber',
+'Button-Down',
+'Cardigan',
+'Flannel',
+'Halter',
+'Henley',
+'Hoodie',
+'Jacket',
+'Jersey',
+'Parka',
+'Peacoat',
+'Poncho',
+'Sweater',
+'Tank',
+'Tee',
+'Top',
+'Turtleneck',
+'Capris',
+'Chinos',
+'Culottes',
+'Cutoffs',
+'Gauchos',
+'Jeans',
+'Jeggings',
+'Jodhpurs',
+'Joggers',
+'Leggings',
+'Sarong',
+'Shorts',
+'Skirt',
+'Sweatpants',
+'Sweatshorts',
+'Trunks',
+'Caftan',
+'Cape',
+'Coat',
+'Coverup',
+'Dress',
+'Jumpsuit',
+'Kaftan',
+'Kimono',
+'Nightdress',
+'Onesie',
+'Robe',
+'Romper',
+'Shirtdress',
+'Sundress',
+]
 
 
 # --- Model Loader ---
@@ -51,14 +105,7 @@ def load_model(path, default_img_size):
         
         # Input 1: Landmarks (assumed)
         lm_input_meta = model_inputs_meta[1]
-        # Ensure landmark shape is fully defined, e.g. (1, 16)
-        lm_shape = []
-        for dim_val in lm_input_meta.shape:
-            if isinstance(dim_val, int) and dim_val > 0:
-                lm_shape.append(dim_val)
-            else: # Dynamic dimension or zero/negative, which is problematic for fixed landmark tensor
-                raise ValueError(f"Landmark input '{lm_input_meta.name}' for classification model {path} has non-fixed dimensions: {lm_input_meta.shape}. Expected fixed shape (e.g., [1, 16]).")
-        lm_shape_tuple = tuple(lm_shape)
+        lm_shape_tuple = (1, 16)
         input_details_list.append({'name': lm_input_meta.name, 'type': 'landmarks', 'shape': lm_shape_tuple})
         
         print(f"Classification Model loaded. Image Input: '{input_details_list[0]['name']}' Size: {input_details_list[0]['size']}, Landmark Input: '{input_details_list[1]['name']}' Shape: {input_details_list[1]['shape']}")
@@ -338,11 +385,11 @@ def predict():
             classification_outputs = classification_session.run(None, classification_feed_dict)
             # Assuming the output is a list of probabilities for each class
             # Output shape might be (1, num_classes)
-            class_probs = classification_outputs[0][0] # Get the probabilities for the first (and only) batch item
+            class_probs = classification_outputs[1]
             predicted_class_index = int(np.argmax(class_probs))
             predicted_class_confidence = float(class_probs[predicted_class_index])
             classification_result = {
-                "predicted_class_index": predicted_class_index,
+                "predicted_class_index": CATEGORY_LIST[predicted_class_index],
                 "confidence": round(predicted_class_confidence, 3)
             }
         except Exception as e:

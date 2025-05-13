@@ -19,7 +19,7 @@ COPY requirements.txt /app
 RUN pip install 'numpy<2.0.0'
 RUN pip install -r requirements.txt
 
-COPY yoloItem.onnx /app
+COPY yolo.onnx /app
 COPY landmark.onnx /app
 
 COPY inference_onnx.py /app
