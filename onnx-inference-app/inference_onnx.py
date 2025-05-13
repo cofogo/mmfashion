@@ -11,9 +11,9 @@ from ultralytics.utils import ops
 import torchvision.transforms as transforms # For landmark preprocessing normalization
 
 # --- Configuration ---
-YOLO_MODEL_PATH = 'yoloItem.onnx'
-LANDMARK_MODEL_PATH = 'landmark.onnx' # Added landmark model path
-CLASSIFICATION_MODEL_PATH = 'classification.onnx' # Added classification model path
+YOLO_MODEL_PATH = 'onnxmodels/yolo.onnx'
+LANDMARK_MODEL_PATH = 'onnxmodels/landmark.onnx' # Added landmark model path
+CLASSIFICATION_MODEL_PATH = 'onnxmodels/category.onnx' # Added classification model path
 DEFAULT_YOLO_INPUT_SIZE = (224, 224)
 DEFAULT_LANDMARK_INPUT_SIZE = (224, 224) # Default for landmark model
 DEFAULT_CLASSIFICATION_INPUT_SIZE = (224, 224) # Default for classification model
