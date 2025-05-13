@@ -9,7 +9,7 @@ from mmfashion.models import build_landmark_detector
 # === CONFIGURATION ===
 CONFIG_FILE = 'configs/landmark_detect/landmark_detect_resnet.py'
 CHECKPOINT_FILE = 'checkpoints/resnetLandmarkLatest.pth'
-ONNX_OUTPUT_FILE = 'conversion/onnxmodels/landmark.onnx'
+ONNX_OUTPUT_FILE = 'onnxmodels/landmark.onnx'
 
 # === BUILD MODEL ===
 cfg = Config.fromfile(CONFIG_FILE)

@@ -12,7 +12,7 @@ from mmfashion.models import build_predictor
 # === CONFIGURATION ===
 CONFIG_FILE = 'configs/category_attribute_predict/roi_predictor_resnet.py'
 CHECKPOINT_FILE = 'checkpoints/resnetRoiLatest.pth'
-ONNX_OUTPUT_FILE = 'conversion/onnxmodels/category.onnx'
+ONNX_OUTPUT_FILE = 'onnxmodels/category.onnx'
 
 # === BUILD MODEL ===
 cfg = Config.fromfile(CONFIG_FILE)
