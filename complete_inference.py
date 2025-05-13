@@ -16,8 +16,9 @@ from mmfashion.core import CatePredictor, AttrPredictor # Assuming we primarily 
 
 
 # --- Configuration ---
-DEFAULT_INPUT_DIR = 'data/Attr_Predict/img/V-Neck_Sweater' # Example input
+DEFAULT_INPUT_DIR = '/Users/ties/Pictures/miniset' # Example input
 DEFAULT_OUTPUT_DIR = 'output_complete_inference'
+VISIBILITY_THRESHOLD = 0.0
 
 # Model Paths (Update these paths as needed)
 YOLO_CHECKPOINT = 'checkpoints/best.pt'
@@ -135,7 +136,7 @@ def detect_landmarks_on_crop(pil_crop, landmark_detector, use_cuda):
         landmark_tensor_np[i * 2 + 1] = y_norm
 
         # Store visible landmarks scaled to original crop size for drawing
-        if vis[i] >= 0.5: # Visibility threshold
+        if vis[i] >= VISIBILITY_THRESHOLD: # Visibility threshold
              visible_landmarks_coords.append((x_norm * scale_x, y_norm * scale_y))
 
     landmark_tensor = torch.from_numpy(landmark_tensor_np).view(1, -1) # Shape (1, num_landmarks * 2)
@@ -385,6 +386,7 @@ def main():
                     landmark_tensor, visible_landmarks = detect_landmarks_on_crop(
                         cropped_pil_image, landmark_detector, args.use_cuda # Use PIL image for tensor input
                     )
+                    [print(visible_landmark[0]+x1, visible_landmark[1]+y1) for visible_landmark in visible_landmarks] # Print visible landmarks
                     print(f"      Detected {len(visible_landmarks)} visible landmarks.")
 
                     # --- Visualization: Show Landmarks on Crop ---
