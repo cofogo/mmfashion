@@ -19,9 +19,8 @@ COPY requirements.txt /app
 RUN pip install 'numpy<2.0.0'
 RUN pip install -r requirements.txt
 
-COPY yolo.onnx /app
-COPY landmark.onnx /app
+COPY onnxmodels/yolo.onnx onnxmodels/landmark.onnx onnxmodels/category.onnx /app/onnxmodels/
 
-COPY inference_onnx.py /app
+COPY inference_onnx.py models.py processing.py labels.py /app/
 EXPOSE 5000
 CMD ["python", "inference_onnx.py"]
