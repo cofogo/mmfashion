@@ -1,3 +1,6 @@
+''' VGG model loading and conversion was unsuccessful, this script is for reference only.'''
+print('VGG model loading and conversion was unsuccessful, this script is for reference only.')
+
 from __future__ import division
 
 import torch
@@ -7,9 +10,9 @@ from mmcv.runner import load_checkpoint
 from mmfashion.models import build_landmark_detector
 
 # === CONFIGURATION ===
-CONFIG_FILE = 'configs/landmark_detect/landmark_detect_resnet.py'
-CHECKPOINT_FILE = 'checkpoints/resnetLandmarkLatest.pth'
-ONNX_OUTPUT_FILE = 'onnxmodels/landmark.onnx'
+CONFIG_FILE = 'configs/landmark_detect/landmark_detect_vgg.py'
+CHECKPOINT_FILE = 'checkpoints/vggLandmarkLatest.pth'
+ONNX_OUTPUT_FILE = 'onnxmodels/vgglandmark.onnx'
 
 # === BUILD MODEL ===
 cfg = Config.fromfile(CONFIG_FILE)
@@ -18,7 +21,7 @@ model.eval()
 print('Model built.')
 
 # === LOAD CHECKPOINT INTO BASE MODEL (NOT WRAPPER) ===
-load_checkpoint(model, CHECKPOINT_FILE, map_location='cpu')
+load_checkpoint(model, CHECKPOINT_FILE, map_location='cpu', strict=False)
 print(f'Loaded checkpoint from: {CHECKPOINT_FILE}')
 
 # === WRAP MODEL FOR ONNX EXPORT ===
@@ -38,7 +41,23 @@ wrapped_model = LandmarkWrapper(model)
 wrapped_model.eval()
 
 # === CREATE DUMMY INPUT ===
-img_tensor = torch.randn(1, 3, 224, 224, requires_grad=False)
+input_size = 224
+img_tensor = torch.randn(1, 3, input_size, input_size, requires_grad=False)
+
+'''
+# Attempt to solve model size & checkpoint size mismatch
+print(model.global_pool.global_layers)
+ties = model.backbone(img_tensor)
+ties = model.global_pool.avgpool(ties)
+ties = ties.view(ties.size(0), -1)
+ties = model.global_pool.global_layers[0](ties)
+ties = model.global_pool.global_layers[1](ties)
+ties = model.global_pool.global_layers[2](ties)
+ties = model.global_pool.global_layers[3](ties)
+ties = model.global_pool.global_layers[4](ties)
+ties = model.global_pool.global_layers[5](ties)
+ties = model.landmark_feature_extractor(ties)
+'''
 
 # === DRY RUN FOR DEBUG ===
 with torch.no_grad():

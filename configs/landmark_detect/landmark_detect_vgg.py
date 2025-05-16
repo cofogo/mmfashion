@@ -37,7 +37,8 @@ model = dict(
         outchannels=2,
         landmark_num=landmark_num,
         loss_regress=dict(type='MSELoss', ratio=1, reduction='none')),
-    pretrained='checkpoint/vgg16.pth')
+    # pretrained='checkpoint/vgg16.pth'
+)
 
 # dataset settings
 dataset_type = 'Landmark_Detect'
