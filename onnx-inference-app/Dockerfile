@@ -14,20 +14,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libtiff5-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install dependencies
+# Copy requirements and install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir 'numpy<2.0.0' && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY onnxmodels/yolo.onnx onnxmodels/vgglandmark.onnx onnxmodels/category.onnx /app/onnxmodels/
-COPY inference_onnx.py models.py processing.py labels.py /app/
+# Copy application code and models
+COPY onnxmodels/*.onnx /app/onnxmodels/
+COPY *.py /app/
 
-# Final minimal image
+# Final image
 FROM python:3.9.19-slim
 WORKDIR /app
 
-# Copy everything from builder
+# Reinstall system dependencies required at runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libgl1-mesa-glx \
+    libsm6 \
+    libxrender-dev \
+    libxext6 \
+    libfontconfig1 \
+    libfreetype6-dev \
+    libpng-dev \
+    libtiff5-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy app with installed packages
+COPY --from=builder /usr/local/lib/python3.9/site-packages/ /usr/local/lib/python3.9/site-packages/
+COPY --from=builder /usr/local/bin/ /usr/local/bin/
 COPY --from=builder /app /app
 
 EXPOSE 5000
