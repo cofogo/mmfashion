@@ -2,7 +2,7 @@ import onnxruntime as ort
 import numpy as np
 import cv2
 
-onnx_model_path = "onnxmodels/attribute.onnx"  # Replace with your model path
+onnx_model_path = "onnx-inference-app/onnxmodels/attribute.onnx"  # Replace with your model path
 image_path = "/Users/ties/Pictures/sweater5.jpg"        # Replace with your image path
 
 ATTRIBUTE_LIST_COARSE = [

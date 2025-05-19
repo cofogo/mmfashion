@@ -12,7 +12,7 @@ from mmfashion.models import build_landmark_detector
 # === CONFIGURATION ===
 CONFIG_FILE = 'configs/landmark_detect/landmark_detect_vgg.py'
 CHECKPOINT_FILE = 'checkpoints/vggLandmarkLatest.pth'
-ONNX_OUTPUT_FILE = 'onnxmodels/vgglandmark.onnx'
+ONNX_OUTPUT_FILE = 'onnx-inference-app/onnxmodels/vgglandmark.onnx'
 
 # === BUILD MODEL ===
 cfg = Config.fromfile(CONFIG_FILE)

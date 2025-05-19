@@ -11,7 +11,7 @@ from mmfashion.models import build_predictor
 # === CONFIGURATION ===
 CHECKPOINT_FILE = 'checkpoints/resnetAttrLatest.pth'
 CONFIG_FILE = 'configs/attribute_predict_coarse/roi_predictor_resnet_attr.py'
-ONNX_OUTPUT_FILE = 'onnxmodels/attributeLayers/attributes.onnx'
+ONNX_OUTPUT_FILE = 'onnx-inference-app/onnxmodels/attributeLayers/attributes.onnx'
 
 # === BUILD MODEL ===
 cfg = Config.fromfile(CONFIG_FILE)
