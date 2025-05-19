@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir 'numpy<2.0.0' && \
 
 # Copy application code and models
 COPY onnxmodels/* /app/onnxmodels/
+COPY onnxmodels/attributeLayers/* /app/onnxmodels/attributeLayers/
 COPY *.py /app/
 
 # Final image
@@ -44,6 +45,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /usr/local/lib/python3.9/site-packages/ /usr/local/lib/python3.9/site-packages/
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
 COPY --from=builder /app /app
+
+ENV YOLO_CONFIG_DIR=/app/.ultralytics
 
 EXPOSE 5000
 CMD ["python", "inference_onnx.py"]

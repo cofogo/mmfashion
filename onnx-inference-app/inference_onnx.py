@@ -9,11 +9,13 @@ from models import load_model, load_classification_model
 from processing import *
 from labels import CATEGORY_LIST, ATTRIBUTE_LIST, ATTRIBUTE_LIST_COARSE
 
+print("Warning: If the container stops running without error, it most likely means the container ran out of memory.")
+
 # --- Configuration ---
 YOLO_MODEL_PATH = 'onnxmodels/yolo.onnx'
 LANDMARK_MODEL_PATH = 'onnxmodels/landmark.onnx' # Added landmark model path
 CLASSIFICATION_MODEL_PATH = 'onnxmodels/category.onnx' # Added classification model path
-ATTRIBUTES_MODEL_PATH = 'onnxmodels/attributes.onnx' # Added attributes model path
+ATTRIBUTES_MODEL_PATH = 'onnxmodels/attributeLayers/attributes.onnx' # Added attributes model path
 
 DEFAULT_YOLO_INPUT_SIZE = (224, 224)
 DEFAULT_LANDMARK_INPUT_SIZE = (224, 224) # Default for landmark model
