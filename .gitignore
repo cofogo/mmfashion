@@ -21,6 +21,8 @@ data/VTON
 data/gdrive-linux-64
 checkpoint/
 extracted_features/
+onnxmodels/attributeLayers/
+onnx-inference-app/onnxmodels/attributeLayers/
 
 *.pyc
 # *.png
@@ -148,4 +150,5 @@ venv.bak/
 .mypy_cache/
 .aider*
 runs/
+**/.DS_Store
 .DS_Store

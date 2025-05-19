@@ -9,20 +9,7 @@ def preprocess_image_yolo(image, size):
     return np.expand_dims(image_chw, axis=0) # Add batch dimension
 
 # Preprocessing for Landmark model (assumes ImageNet normalization)
-def preprocess_image_landmark(pil_image, size):
-    # size is (height, width)
-    img_norm = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    normalize = transforms.Normalize(mean=img_norm['mean'], std=img_norm['std'])
-    transform = transforms.Compose([
-        transforms.Resize(size), # Resize takes (h, w)
-        transforms.ToTensor(), # Converts to [0, 1] and CHW
-        normalize,
-    ])
-    img_tensor = transform(pil_image).unsqueeze(0) # Add batch dimension
-    return img_tensor.cpu().numpy() # ONNX runtime expects numpy
-
-# Preprocessing for Classification model (assumes ImageNet normalization)
-def preprocess_image_classification(pil_image, size):
+def preprocess_image(pil_image, size):
     # size is (height, width)
     img_norm = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     normalize = transforms.Normalize(mean=img_norm['mean'], std=img_norm['std'])

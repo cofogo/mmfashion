@@ -7,22 +7,26 @@ from ultralytics.utils import ops
 
 from models import load_model, load_classification_model
 from processing import *
-from labels import CATEGORY_LIST
+from labels import CATEGORY_LIST, ATTRIBUTE_LIST, ATTRIBUTE_LIST_COARSE
 
 # --- Configuration ---
 YOLO_MODEL_PATH = 'onnxmodels/yolo.onnx'
 LANDMARK_MODEL_PATH = 'onnxmodels/landmark.onnx' # Added landmark model path
 CLASSIFICATION_MODEL_PATH = 'onnxmodels/category.onnx' # Added classification model path
+ATTRIBUTES_MODEL_PATH = 'onnxmodels/attributes.onnx' # Added attributes model path
 
 DEFAULT_YOLO_INPUT_SIZE = (224, 224)
 DEFAULT_LANDMARK_INPUT_SIZE = (224, 224) # Default for landmark model
 DEFAULT_CLASSIFICATION_INPUT_SIZE = (224, 224) # Default for classification model
+DEFAULT_ATTRIBUTES_INPUT_SIZE = (224, 224) # Default for attributes model
 
 CROP_BUFFER = 10 # Pixels to add around the bounding box for cropping
 CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.45
 MAX_DETECTIONS = 1 # Only process the first most confident detection
 CLOTHING_CLASS_ID = 2 # Class ID for clothing in YOLO model
+ATTRIBUTE_THRESHOLD = 0.4
+COARSE_ATTRIBUTE_THRESHOLD = 0.1
 
 
 # --- Initialize Models ---
@@ -32,14 +36,15 @@ yolo_input_details, landmark_input_details, classification_input_details = None,
 yolo_session, yolo_input_details = load_model(YOLO_MODEL_PATH, DEFAULT_YOLO_INPUT_SIZE)
 landmark_session, landmark_input_details = load_model(LANDMARK_MODEL_PATH, DEFAULT_LANDMARK_INPUT_SIZE)
 classification_session, classification_input_details = load_classification_model(CLASSIFICATION_MODEL_PATH, DEFAULT_CLASSIFICATION_INPUT_SIZE)
+attributes_session, attributes_input_details = load_classification_model(ATTRIBUTES_MODEL_PATH, DEFAULT_ATTRIBUTES_INPUT_SIZE)
 
 # --- Flask App ---
 app = Flask(__name__)
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    if not all([yolo_session, landmark_session, classification_session,
-                yolo_input_details, landmark_input_details, classification_input_details]):
+    if not all([yolo_session, landmark_session, classification_session, attributes_session,
+                yolo_input_details, landmark_input_details, classification_input_details, attributes_input_details]):
         return jsonify({"error": "One or more models or their configurations not loaded"}), 500
 
     if "image" not in request.files:
@@ -87,6 +92,11 @@ def predict():
         confidence = detection[4]
         class_id = int(detection[5])
         assert class_id == CLOTHING_CLASS_ID, "Class ID mismatch. Expected clothing class."
+        
+        bbox_result = {
+            "bbox": [x1, y1, x2, y2],
+            "confidence": round(confidence, 5)
+        }
 
         # Create buffered crop coordinates, clamped to image bounds
         bx1 = max(0, x1 - CROP_BUFFER)
@@ -113,7 +123,7 @@ def predict():
         # Preprocess crop for landmark model
         landmark_input_name = landmark_input_details[0]['name']
         landmark_model_input_size = landmark_input_details[0]['size'] # (h,w) for landmark model
-        landmark_input_tensor = preprocess_image_landmark(cropped_image, landmark_model_input_size)
+        landmark_input_tensor = preprocess_image(cropped_image, landmark_model_input_size)
 
         # Run landmark inference
         try:
@@ -141,7 +151,17 @@ def predict():
         classification_lm_input_name = classification_input_details[1]['name']
         classification_lm_input_shape = classification_input_details[1]['shape']
 
-        classification_img_tensor = preprocess_image_classification(cropped_image, classification_img_input_size)
+        classification_img_tensor = preprocess_image(cropped_image, classification_img_input_size)
+        
+        classification_result = {
+            "predicted_class_index": None,
+            "class_confidence": None
+        }
+        
+        attributes_result = {
+            "predicted_fine_attributes": None,
+            "predicted_coarse_attributes": None
+        }
         
         try:
             if landmarks_norm_raw.ndim != 2 or landmarks_norm_raw.shape[0] == 0 : # Check if landmarks were detected
@@ -154,23 +174,51 @@ def predict():
                 classification_lm_input_name: classification_lm_tensor
             }
             classification_outputs = classification_session.run(None, classification_feed_dict)
-            class_probs = classification_outputs[1]
+            attr_probs, class_probs = classification_outputs
+            predicted_attributes = []
+            attr_probs = np.array(attr_probs)  # Ensure it's a NumPy array
+            mask = attr_probs >= ATTRIBUTE_THRESHOLD
+            predicted_attributes = list(np.array(ATTRIBUTE_LIST)[mask])
             predicted_class_index = int(np.argmax(class_probs))
             predicted_class_confidence = float(class_probs[predicted_class_index])
-            classification_result = {
-                "predicted_class_index": CATEGORY_LIST[predicted_class_index],
-                "confidence": round(predicted_class_confidence, 5)
-            }
+            classification_result["predicted_class_index" ]= CATEGORY_LIST[predicted_class_index]
+            classification_result["class_confidence"] = round(predicted_class_confidence, 5)
+            attributes_result["predicted_fine_attributes"] = predicted_attributes
         except Exception as e:
             app.logger.error(f"Error running classification inference for box {detection[:4]}: {e}")
-            classification_result = {"error": "Classification failed"}
+            
+        # 5. Run Attributes Model on the crop and its landmarks
+        attributes_img_input_name = attributes_input_details[0]['name']
+        attributes_img_input_size = attributes_input_details[0]['size']
+        attributes_lm_input_name = attributes_input_details[1]['name']
+        attributes_lm_input_shape = attributes_input_details[1]['shape']
+        
+        attributes_img_tensor = preprocess_image(cropped_image, attributes_img_input_size)
+        try:
+            if landmarks_norm_raw.ndim != 2 or landmarks_norm_raw.shape[0] == 0 : # Check if landmarks were detected
+                 raise ValueError("No valid landmarks detected or landmark output is empty/malformed, cannot run attributes.")
+            
+            attributes_lm_tensor = prepare_landmarks_for_onnx(landmarks_norm_raw, attributes_lm_input_shape)
+
+            attributes_feed_dict = {
+                attributes_img_input_name: attributes_img_tensor,
+                attributes_lm_input_name: attributes_lm_tensor
+            }
+            attr_probs = attributes_session.run(None, attributes_feed_dict)
+            predicted_attributes = []
+            attr_probs = np.array(attr_probs[0])  # Ensure it's a NumPy array
+            mask = attr_probs >= COARSE_ATTRIBUTE_THRESHOLD
+            predicted_attributes = list(np.array(ATTRIBUTE_LIST_COARSE)[mask])
+            attributes_result["predicted_coarse_attributes"] = predicted_attributes
+        except Exception as e:
+            app.logger.error(f"Error running attribute inference for box {detection[:4]}: {e}")
 
 
         return jsonify({
-            "bbox": [x1, y1, x2, y2], # Original YOLO box (unbuffered)
-            "confidence": round(confidence, 5),
+            "bounding_box": bbox_result,
             "landmarks": scaled_landmarks, # Scaled to original image coords
-            "classification": classification_result
+            "classification": classification_result,
+            "attributes": attributes_result
         }), 200
 
 
@@ -180,8 +228,8 @@ def predict():
 
 
 if __name__ == "__main__":
-    if all([yolo_session, landmark_session, classification_session,
-            yolo_input_details, landmark_input_details, classification_input_details]):
+    if all([yolo_session, landmark_session, classification_session, attributes_session,
+            yolo_input_details, landmark_input_details, classification_input_details, attributes_input_details]):
         print("Starting Flask server with YOLO, Landmark, and Classification models...")
         app.run(host="0.0.0.0", port=5000)
     else:

@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir 'numpy<2.0.0' && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy application code and models
-COPY onnxmodels/*.onnx /app/onnxmodels/
+COPY onnxmodels/* /app/onnxmodels/
 COPY *.py /app/
 
 # Final image
