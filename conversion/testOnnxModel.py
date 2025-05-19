@@ -1,8 +1,13 @@
 import onnxruntime as ort
 import numpy as np
 import cv2
+import ast
 
-onnx_model_path = "onnx-inference-app/onnxmodels/attribute.onnx"  # Replace with your model path
+task = 'category'
+assert task in ['landmark', 'attributes', 'fabric', 'fibre', 'yolo', 'category'], f"Task {task} not supported"
+taskModel = 'attributeLayers/attributes.onnx' if task == 'attributes' else task+'.onnx'
+
+onnx_model_path = f"onnx-inference-app/onnxmodels/{taskModel}"  # Replace with your model path
 image_path = "/Users/ties/Pictures/sweater5.jpg"        # Replace with your image path
 
 ATTRIBUTE_LIST_COARSE = [
@@ -1037,8 +1042,16 @@ def preprocess_image(image_path, input_shape):
 def run_inference(session, input_tensor):
     """Run inference and return output"""
     input_name = session.get_inputs()[0].name
-    outputs = session.run(None, {input_name: input_tensor, 'landmarks': np.zeros((1, 16), dtype=np.float32)})  # Dummy landmarks
-    return outputs[0]
+    if task in ['attributes', 'category']:
+        # For attributes and category, we need to pass a dummy landmarks tensor
+        outputs = session.run(None, {input_name: input_tensor, 'landmarks': np.zeros((1, 16), dtype=np.float32)})  # Dummy landmarks
+        return outputs[0]
+    else:
+        outputs = session.run(None, {input_name: input_tensor})
+        if task == 'landmark':
+            return outputs[1]
+        else:
+            return outputs[0]
 
 def scale_landmarks(landmarks_norm, landmark_model_size, crop_size):
     # landmarks_norm: list of [x, y] normalized to landmark_model_size (e.g., 0-224)
@@ -1058,26 +1071,54 @@ def scale_landmarks(landmarks_norm, landmark_model_size, crop_size):
 
     return scaled_landmarks
 
+if task in ['fabric', 'fibre']:
+    with open(f'onnx-inference-app/labels/{task}_label.txt', 'r') as f:
+        content = f.read()
+
+    garment_dict = ast.literal_eval(content)
+    garment_dict = {v: k for k, v in garment_dict.items()}
+
 if __name__ == "__main__":
 
     session = load_model(onnx_model_path)
 
-    # Get input shape (e.g., (1, 3, 224, 224))
-    input_shape = session.get_inputs()[0].shape
+    input_shape = (1, 3, 224, 224)
     input_tensor, img_shape = preprocess_image(image_path, input_shape)
 
     output = run_inference(session, input_tensor)
     
-    '''
-    landmarks = scale_landmarks(output, (input_shape[2], input_shape[3]), (img_shape[0], img_shape[1]))
-    draw = draw_landmarks_cv2(cv2.imread(image_path), landmarks)  # Draw landmarks on the image
-    cv2.imshow("Landmarks", draw)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-    print("Inference Output:", output)
-    '''
-    ATTRIBUTE_THRESHOLD = 0.1
-    attr_probs = np.array(output)  # Ensure it's a NumPy array
-    mask = attr_probs >= ATTRIBUTE_THRESHOLD
-    predicted_attributes = list(map(str, np.array(ATTRIBUTE_LIST_COARSE)[mask]))
-    print("Inference Output:", predicted_attributes)
+    if task ==  'landmark':
+        landmarks = scale_landmarks(output, (input_shape[2], input_shape[3]), (img_shape[0], img_shape[1]))
+        draw = draw_landmarks_cv2(cv2.imread(image_path), landmarks)  # Draw landmarks on the image
+        cv2.imshow("Landmarks", draw)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        print("Inference Output:", output)
+    
+    elif task ==  'attributes':
+        ATTRIBUTE_THRESHOLD = 0.1
+        attr_probs = np.array(output)  # Ensure it's a NumPy array
+        mask = attr_probs >= ATTRIBUTE_THRESHOLD
+        predicted_attributes = list(map(str, np.array(ATTRIBUTE_LIST_COARSE)[mask]))
+        print("Inference Output:", predicted_attributes)
+    
+    elif task in ['fabric', 'fibre']:
+        predicted_label_index = np.argmax(output)
+
+        # Check if the predicted index is in the fabric_dict
+        if predicted_label_index in garment_dict:
+            output_name = garment_dict[predicted_label_index]
+        else:
+            # Handle cases where the prediction index might be out of bounds
+            # or not present in the loaded label dictionary.
+            output_name = f"Unknown Label Index: {predicted_label_index}"
+        print("Inference Output:", output_name)
+        
+    elif task == 'yolo':
+        # TODO: Implement YOLO-specific post-processing
+        print("Inference Output:", output)
+        
+    elif task == 'category':
+        # TODO: Implement category-specific post-processing
+        print("Inference Output:", output)
+    
