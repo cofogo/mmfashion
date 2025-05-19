@@ -2,6 +2,7 @@ import onnxruntime as ort
 import numpy as np
 import cv2
 import ast
+from ultralytics.utils import ops
 
 task = 'category'
 assert task in ['landmark', 'attributes', 'fabric', 'fibre', 'yolo', 'category'], f"Task {task} not supported"
@@ -9,6 +10,88 @@ taskModel = 'attributeLayers/attributes.onnx' if task == 'attributes' else task+
 
 onnx_model_path = f"onnx-inference-app/onnxmodels/{taskModel}"  # Replace with your model path
 image_path = "/Users/ties/Pictures/sweater5.jpg"        # Replace with your image path
+
+CATEGORY_LIST = [
+    'Anorak',
+    'Blazer',
+    'Blouse',
+    'Bomber',
+    'Button-Down',
+    'Cardigan',
+    'Flannel',
+    'Halter',
+    'Henley',
+    'Hoodie',
+    'Jacket',
+    'Jersey',
+    'Parka',
+    'Peacoat',
+    'Poncho',
+    'Sweater',
+    'Tank',
+    'Tee',
+    'Top',
+    'Turtleneck',
+    'Capris',
+    'Chinos',
+    'Culottes',
+    'Cutoffs',
+    'Gauchos',
+    'Jeans',
+    'Jeggings',
+    'Jodhpurs',
+    'Joggers',
+    'Leggings',
+    'Sarong',
+    'Shorts',
+    'Skirt',
+    'Sweatpants',
+    'Sweatshorts',
+    'Trunks',
+    'Caftan',
+    'Cape',
+    'Coat',
+    'Coverup',
+    'Dress',
+    'Jumpsuit',
+    'Kaftan',
+    'Kimono',
+    'Nightdress',
+    'Onesie',
+    'Robe',
+    'Romper',
+    'Shirtdress',
+    'Sundress',
+]
+
+ATTRIBUTE_LIST = [
+    'floral',
+    'graphic',
+    'striped',
+    'embroidered',
+    'pleated',
+    'solid',
+    'lattice',
+    'long_sleeve',
+    'short_sleeve',
+    'sleeveless',
+    'maxi_length',
+    'mini_length',
+    'no_dress',
+    'crew_neckline',
+    'v_neckline',
+    'square_neckline',
+    'no_neckline',
+    'denim',
+    'chiffon',
+    'cotton',
+    'leather',
+    'faux',
+    'knit',
+    'tight',
+    'loose',
+    'conventional',
+]
 
 ATTRIBUTE_LIST_COARSE = [
 'a-line',
@@ -1045,7 +1128,7 @@ def run_inference(session, input_tensor):
     if task in ['attributes', 'category']:
         # For attributes and category, we need to pass a dummy landmarks tensor
         outputs = session.run(None, {input_name: input_tensor, 'landmarks': np.zeros((1, 16), dtype=np.float32)})  # Dummy landmarks
-        return outputs[0]
+        return outputs[0] if task == 'attributes' else outputs
     else:
         outputs = session.run(None, {input_name: input_tensor})
         if task == 'landmark':
@@ -1096,9 +1179,8 @@ if __name__ == "__main__":
         print("Inference Output:", output)
     
     elif task ==  'attributes':
-        ATTRIBUTE_THRESHOLD = 0.1
         attr_probs = np.array(output)  # Ensure it's a NumPy array
-        mask = attr_probs >= ATTRIBUTE_THRESHOLD
+        mask = attr_probs >= 0.1
         predicted_attributes = list(map(str, np.array(ATTRIBUTE_LIST_COARSE)[mask]))
         print("Inference Output:", predicted_attributes)
     
@@ -1115,10 +1197,22 @@ if __name__ == "__main__":
         print("Inference Output:", output_name)
         
     elif task == 'yolo':
-        # TODO: Implement YOLO-specific post-processing
-        print("Inference Output:", output)
+        yolo_detections_nms = ops.non_max_suppression(
+            output,
+            conf_thres=0.25,
+            iou_thres=0.45,
+            classes=2,
+            agnostic=False,
+        )[0] # Get detections for the first image
+        print("Inference Output:", yolo_detections_nms)
         
     elif task == 'category':
-        # TODO: Implement category-specific post-processing
-        print("Inference Output:", output)
+        attr_probs, class_probs = output
+        predicted_attributes = []
+        attr_probs = np.array(attr_probs)  # Ensure it's a NumPy array
+        mask = attr_probs >= 0.4
+        predicted_attributes = list(map(str, np.array(ATTRIBUTE_LIST)[mask]))
+        predicted_class_index = int(np.argmax(class_probs))
+        predicted_class = CATEGORY_LIST[predicted_class_index]
+        print("Inference Output:", predicted_attributes, predicted_class)
     
