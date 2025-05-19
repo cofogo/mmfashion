@@ -1,3 +1,6 @@
+import ast
+from utils import resolve_model_path
+
 CATEGORY_LIST = [
     'Anorak',
     'Blazer',
@@ -1082,3 +1085,18 @@ ATTRIBUTE_LIST_COARSE = [
 'zipper',
 'zippered',
 ]
+
+
+fabric_path = resolve_model_path('labels/fabric_label.txt')
+with open(fabric_path, 'r') as f:
+    content = f.read()
+
+FABRIC_LIST = ast.literal_eval(content)
+FABRIC_LIST = {v: k for k, v in FABRIC_LIST.items()}
+
+fibre_path = resolve_model_path('labels/fibre_label.txt')
+with open(fibre_path, 'r') as f:
+    content = f.read()
+
+FIBRE_LIST = ast.literal_eval(content)
+FIBRE_LIST = {v: k for k, v in FIBRE_LIST.items()}

@@ -1,4 +1,5 @@
 import io
+import os
 import numpy as np
 import torch
 from flask import Flask, request, jsonify
@@ -7,15 +8,21 @@ from ultralytics.utils import ops
 
 from models import load_model, load_classification_model
 from processing import *
-from labels import CATEGORY_LIST, ATTRIBUTE_LIST, ATTRIBUTE_LIST_COARSE
+from labels import *
+from utils import resolve_model_path
 
 print("Warning: If the container stops running without error, it most likely means the container ran out of memory.")
 
 # --- Configuration ---
-YOLO_MODEL_PATH = 'onnxmodels/yolo.onnx'
-LANDMARK_MODEL_PATH = 'onnxmodels/landmark.onnx' # Added landmark model path
-CLASSIFICATION_MODEL_PATH = 'onnxmodels/category.onnx' # Added classification model path
-ATTRIBUTES_MODEL_PATH = 'onnxmodels/attributeLayers/attributes.onnx' # Added attributes model path
+
+# Define model paths
+YOLO_MODEL_PATH = resolve_model_path('onnxmodels/yolo.onnx')
+LANDMARK_MODEL_PATH = resolve_model_path('onnxmodels/landmark.onnx')
+CLASSIFICATION_MODEL_PATH = resolve_model_path('onnxmodels/category.onnx')
+ATTRIBUTES_MODEL_PATH = resolve_model_path('onnxmodels/attributeLayers/attributes.onnx')
+FABRIC_MODEL_PATH = resolve_model_path('onnxmodels/fabric.onnx')
+FIBRE_MODEL_PATH = resolve_model_path('onnxmodels/fibre.onnx')
+
 
 DEFAULT_YOLO_INPUT_SIZE = (224, 224)
 DEFAULT_LANDMARK_INPUT_SIZE = (224, 224) # Default for landmark model
@@ -32,21 +39,23 @@ COARSE_ATTRIBUTE_THRESHOLD = 0.1
 
 
 # --- Initialize Models ---
-yolo_session, landmark_session, classification_session = None, None, None
-yolo_input_details, landmark_input_details, classification_input_details = None, None, None
+yolo_session, landmark_session, classification_session, attributes_session, fabric_session, fibre_session = None, None, None, None, None, None
+yolo_input_details, landmark_input_details, classification_input_details, attributes_input_details, fabric_input_details, fibre_input_details = None, None, None, None, None, None
 
 yolo_session, yolo_input_details = load_model(YOLO_MODEL_PATH, DEFAULT_YOLO_INPUT_SIZE)
 landmark_session, landmark_input_details = load_model(LANDMARK_MODEL_PATH, DEFAULT_LANDMARK_INPUT_SIZE)
 classification_session, classification_input_details = load_classification_model(CLASSIFICATION_MODEL_PATH, DEFAULT_CLASSIFICATION_INPUT_SIZE)
 attributes_session, attributes_input_details = load_classification_model(ATTRIBUTES_MODEL_PATH, DEFAULT_ATTRIBUTES_INPUT_SIZE)
+fabric_session, fabric_input_details = load_model(FABRIC_MODEL_PATH, DEFAULT_CLASSIFICATION_INPUT_SIZE)
+fibre_session, fibre_input_details = load_model(FIBRE_MODEL_PATH, DEFAULT_CLASSIFICATION_INPUT_SIZE)
 
 # --- Flask App ---
 app = Flask(__name__)
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    if not all([yolo_session, landmark_session, classification_session, attributes_session,
-                yolo_input_details, landmark_input_details, classification_input_details, attributes_input_details]):
+    if not all([yolo_session, landmark_session, classification_session, attributes_session, fabric_session, fibre_session,
+                yolo_input_details, landmark_input_details, classification_input_details, attributes_input_details, fabric_input_details, fibre_input_details]):
         return jsonify({"error": "One or more models or their configurations not loaded"}), 500
 
     if "image" not in request.files:
@@ -214,13 +223,54 @@ def predict():
             attributes_result["predicted_coarse_attributes"] = predicted_attributes
         except Exception as e:
             app.logger.error(f"Error running attribute inference for box {detection[:4]}: {e}")
+            
+        # 6. Run Fabric Models on the crop
+        fabric_img_input_name = fabric_input_details[0]['name']
+        fabric_img_input_size = fabric_input_details[0]['size']
+        fabric_img_tensor = preprocess_image(cropped_image, fabric_img_input_size, norm=False)
+        fabric_result = {
+            "predicted_fabric": None,
+            "fabric_confidence": None
+        }
+        try:
+            fabric_output = fabric_session.run(None, {fabric_img_input_name: fabric_img_tensor})[0][0]
+            fabric_probs = softmax(fabric_output)
+            predicted_fabric_index = int(np.argmax(fabric_probs))
+            predicted_fabric_confidence = float(fabric_probs[predicted_fabric_index])
+            fabric_result["predicted_fabric"] = FABRIC_LIST[predicted_fabric_index]
+            fabric_result["fabric_confidence"] = round(predicted_fabric_confidence, 5)
+        except Exception as e:
+            app.logger.error(f"Error running fabric inference for box {detection[:4]}: {e}")
+            
+        # 7. Run Fibre Models on the crop
+        fibre_img_input_name = fibre_input_details[0]['name']
+        fibre_img_input_size = fibre_input_details[0]['size']
+        fibre_img_tensor = preprocess_image(cropped_image, fibre_img_input_size, norm=False)
+        fibre_result = {
+            "predicted_fibre": None,
+            "fibre_confidence": None
+        }
+        try:
+            fibre_output = fibre_session.run(None, {fibre_img_input_name: fibre_img_tensor})[0][0]
+            fibre_probs = softmax(fibre_output)
+            predicted_fibre_index = int(np.argmax(fibre_probs))
+            predicted_fibre_confidence = float(fibre_probs[predicted_fibre_index])
+            fibre_result["predicted_fibre"] = FIBRE_LIST[predicted_fibre_index]
+            fibre_result["fibre_confidence"] = round(predicted_fibre_confidence, 5)
+        except Exception as e:
+            app.logger.error(f"Error running fibre inference for box {detection[:4]}: {e}")
 
+        material_result = {
+            "fabric": fabric_result,
+            "fibre": fibre_result
+        }
 
         return jsonify({
             "bounding_box": bbox_result,
             "landmarks": scaled_landmarks, # Scaled to original image coords
             "classification": classification_result,
-            "attributes": attributes_result
+            "attributes": attributes_result,
+            "material": material_result
         }), 200
 
 
