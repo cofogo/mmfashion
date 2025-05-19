@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir 'numpy<2.0.0' && \
 
 # Copy application code and models
 COPY onnxmodels/* /app/onnxmodels/
+COPY labels/* /app/labels/
 COPY onnxmodels/attributeLayers/* /app/onnxmodels/attributeLayers/
 COPY *.py /app/
 
