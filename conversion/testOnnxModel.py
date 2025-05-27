@@ -1,10 +1,11 @@
 import onnxruntime as ort
 import numpy as np
+import torch
 import cv2
 import ast
 from ultralytics.utils import ops
 
-task = 'category'
+task = 'yolo'
 assert task in ['landmark', 'attributes', 'fabric', 'fibre', 'yolo', 'category'], f"Task {task} not supported"
 taskModel = 'attributeLayers/attributes.onnx' if task == 'attributes' else task+'.onnx'
 
@@ -1197,8 +1198,9 @@ if __name__ == "__main__":
         print("Inference Output:", output_name)
         
     elif task == 'yolo':
+        torch_output = torch.tensor(output)  # Convert to tensor if not already
         yolo_detections_nms = ops.non_max_suppression(
-            output,
+            torch_output,
             conf_thres=0.25,
             iou_thres=0.45,
             classes=2,
